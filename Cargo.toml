@@ -21,7 +21,7 @@ clippy-sleepy = { path = "plugins/sleepy" }
 bitflags = "2.13"
 cargo_metadata = "0.23"
 clap = { version = "4.6", features = ["derive"] }
-enum-map = "2.7"
+enum-map = "3.1"
 env_logger = { version = "0.11", default-features = false, features = ["auto-color"] }
 fastrand = "2.5"
 global-hotkey = "0.9"
