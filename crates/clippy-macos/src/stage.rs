@@ -1,20 +1,3 @@
-// This file is part of Clippy.
-//
-// Copyright (c) 2026  René Coignard <contact@renecoignard.com>
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 use clippy::geometry::Rect;
 use clippy::{BalloonScene, Scene};
 use objc2::rc::Retained;
@@ -22,7 +5,7 @@ use objc2::runtime::ProtocolObject;
 use objc2::{MainThreadMarker, MainThreadOnly, available};
 use objc2_app_kit::{NSPanel, NSScreen, NSWindowDelegate, NSWindowOrderingMode};
 use objc2_core_graphics::CGRectContainsPoint;
-use objc2_foundation::{NSPoint, NSRect, NSSize};
+use objc2_foundation::{NSPoint, NSRect, NSSize, ns_string};
 
 use crate::delegate::Delegate;
 use crate::full_screen::Display;
@@ -75,6 +58,22 @@ impl Stage {
     pub(crate) fn place(&self, clippy: Rect) {
         let primary = primary_height(self.clippy.mtm());
         self.clippy.setFrame_display(unflip(clippy, primary), false);
+    }
+
+    pub(crate) fn return_to_where_left(&self, home: Rect) {
+        let name = ns_string!("Clippy");
+        self.place(home);
+        let size = self.clippy.frame().size;
+        let remembered = self.clippy.setFrameUsingName_force(name, true);
+        self.clippy.setFrameAutosaveName(name);
+        if remembered {
+            let origin = self.clippy.frame().origin;
+            self.clippy
+                .setFrame_display(NSRect::new(origin, size), false);
+        }
+        if self.is_lost() {
+            self.place(home);
+        }
     }
 
     pub(crate) fn geometry(&self) -> (Rect, Rect) {
