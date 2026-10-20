@@ -1,0 +1,92 @@
+[package]
+name = "clippy-macos"
+description = "Clippy on the macOS desktop"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+clippy.workspace = true
+clippy-focus.workspace = true
+clippy-inbox.workspace = true
+clippy-reminders.workspace = true
+clippy-sleepy.workspace = true
+env_logger.workspace = true
+global-hotkey.workspace = true
+jiff.workspace = true
+log.workspace = true
+objc2.workspace = true
+objc2-app-kit = { workspace = true, features = [
+    "std",
+    "NSApplication",
+    "NSColor",
+    "NSCursor",
+    "NSEvent",
+    "NSGraphics",
+    "NSMenu",
+    "NSMenuItem",
+    "NSPanel",
+    "NSPasteboard",
+    "NSResponder",
+    "NSRunningApplication",
+    "NSScreen",
+    "NSSound",
+    "NSText",
+    "NSTextInputClient",
+    "NSTextInputContext",
+    "NSTrackingArea",
+    "NSView",
+    "NSWindow",
+    "NSWorkspace",
+    "objc2-quartz-core",
+] }
+objc2-core-foundation = { workspace = true, features = [
+    "std",
+    "CFArray",
+    "CFCGTypes",
+    "CFData",
+    "CFDictionary",
+    "CFNumber",
+    "CFString",
+] }
+objc2-core-graphics = { workspace = true, features = [
+    "std",
+    "CGColorSpace",
+    "CGDataProvider",
+    "CGGeometry",
+    "CGImage",
+    "CGWindow",
+] }
+objc2-foundation = { workspace = true, features = [
+    "std",
+    "NSArray",
+    "NSAttributedString",
+    "NSData",
+    "NSDate",
+    "NSEnumerator",
+    "NSFileManager",
+    "NSGeometry",
+    "NSNotification",
+    "NSObjCRuntime",
+    "NSObject",
+    "NSPathUtilities",
+    "NSRange",
+    "NSRunLoop",
+    "NSString",
+    "NSTimer",
+    "NSTimeZone",
+    "NSURL",
+] }
+objc2-quartz-core = { workspace = true, features = [
+    "std",
+    "CALayer",
+    "CATransaction",
+    "objc2-core-foundation",
+] }
+
+[lints]
+workspace = true

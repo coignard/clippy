@@ -1,0 +1,24 @@
+[package]
+name = "clippy-inbox"
+description = "Files whatever crosses your mind in an inbox for other programs"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+clippy.workspace = true
+jiff.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+clippy = { workspace = true, features = ["testing"] }
+tempfile.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,10 @@
+* text=auto
+*.md text eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+.gitignore text eol=lf
+*.acs binary
+*.otb binary
+*.png binary
+*.gif binary
