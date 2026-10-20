@@ -41,10 +41,6 @@ Clippy itself and its plugins do not depend on macOS, so on other systems leave 
 cargo test --workspace --exclude clippy-macos
 ```
 
-## LLM Disclosure
-
-All tests in this repository were written with Claude Code.
-
 ## License
 
 <img src="assets/gplv3.svg" height="70" align="right">
@@ -52,3 +48,5 @@ All tests in this repository were written with Claude Code.
 The [Clippy](https://github.com/coignard/clippy) source code is © 2026 René Coignard and licensed under the [GNU General Public License v3.0 or later](LICENSE).
 
 The Clippit character, its animations and sounds, and the MS Sans Serif typeface are © Microsoft and are not covered by this license.
+
+All tests in this repository were written with Claude Code and are not covered by the GPL license.
