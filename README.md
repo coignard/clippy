@@ -1,7 +1,7 @@
 <div align="center"><a href="https://github.com/coignard/clippy">
   <picture>
     <source srcset="https://github.com/coignard/clippy/blob/main/assets/clippy.gif?raw=true">
-    <img src="assets/clippy.gif" alt="Clippy" width="276">
+    <img src="assets/clippy.gif" alt="Clippy" width="128">
   </picture>
 </a>
 
