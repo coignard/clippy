@@ -221,7 +221,9 @@ impl App {
                 .and_then(|content| self.arrange(content))
                 .map(|(layout, placement, frame)| BalloonScene {
                     frame,
-                    canvas: layout.render(placement).scaled(scale),
+                    canvas: layout
+                        .render(placement, self.settings.balloon_tail)
+                        .scaled(scale),
                     field: self.plugins.prompt().zip(layout.field(placement)).map(
                         |(prompt, area)| Field {
                             frame: area.scaled(scale),
@@ -284,7 +286,7 @@ impl App {
             Event::CheckboxRelease { inside } => {
                 if let Some(due) = self.notices.release(inside) {
                     self.plugins.check(&due, &mut self.character, moment);
-                    self.character.hurry_to(Animation::Congratulate);
+                    self.character.celebrate();
                 }
             }
             Event::Focus => self.focused = true,

@@ -1,3 +1,20 @@
+// This file is part of Clippy.
+//
+// Copyright (c) 2026  René Coignard <contact@renecoignard.com>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 use std::ops::Range;
 
 use textwrap::core::Fragment;
@@ -15,7 +32,6 @@ pub(super) const BASELINE: i32 = 11;
 pub(super) const BORDER: i32 = 1;
 pub(super) const TIP: Size = Size::new(10, 16);
 pub(super) const TIP_REACH: i32 = TIP.height - BORDER;
-pub(super) const TIP_INSET: i32 = 50;
 pub(super) const FIELD_INSET: i32 = 4;
 pub(super) const FIELD_TEXT_WIDTH: i32 = MAX_TEXT_WIDTH - 2 * FIELD_INSET;
 const PADDING: i32 = 8;

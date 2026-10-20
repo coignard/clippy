@@ -42,6 +42,6 @@ pub use balloon::{Edit, Motion, Utf16Range};
 pub use character::portrait;
 pub use plugin::{Context, MenuItem, Message, NoSettings, Notice, Plugin, PluginItem, Question};
 pub use scene::{BalloonScene, Field, Scene};
-pub use settings::{AfterSummons, Settings};
+pub use settings::{AfterSummons, BalloonTail, Settings};
 pub use sound::Sound;
 pub use storage::{Storage, StorageError};

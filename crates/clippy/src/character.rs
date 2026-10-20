@@ -228,12 +228,12 @@ impl Character {
         self.play(animation);
     }
 
-    pub(crate) fn hurry_to(&mut self, animation: Animation) {
+    pub(crate) fn celebrate(&mut self) {
         if let State::Performing { playback, .. } = &mut self.state {
             playback.exit();
         }
         self.queue.clear();
-        self.play(animation);
+        self.play(Animation::Congratulate);
     }
 
     pub(crate) fn is_busy_with(&self, animation: Animation) -> bool {
@@ -886,6 +886,21 @@ mod tests {
             matches!(clippy.state, State::Performing { .. })
         });
         settle(&mut clippy, now, Character::is_waiting_with_the_pad);
+    }
+
+    #[test]
+    fn celebrating_waits_for_the_notepad_to_go_away() {
+        let (mut clippy, now) = present(&Settings::default());
+        clippy.set_field(FieldState::Focused);
+        let now = settle(&mut clippy, now, Character::is_waiting_with_the_pad);
+        clippy.set_field(FieldState::Closed);
+        clippy.celebrate();
+        clippy.advance(now);
+        assert!(matches!(clippy.state, State::Notepad(_)));
+        settle(&mut clippy, now, |clippy| {
+            matches!(&clippy.state, State::Performing { playback, .. }
+                if playback.plays(ANIMATIONS.clip(Animation::Congratulate)))
+        });
     }
 
     #[test]

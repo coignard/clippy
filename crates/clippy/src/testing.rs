@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 use fastrand::Rng;
 use jiff::civil::{Date, DateTime, date};
 
+use crate::animation::Animation;
 use crate::app::{Command, Moment};
 use crate::balloon::{Edit, Motion, Prompt};
 use crate::character::Character;
@@ -43,11 +44,14 @@ impl Harness {
     pub fn with_settings<P: Plugin>(plugin: P, settings: P::Settings) -> Self {
         let mut plugins = Plugins::default();
         plugins.install(Box::new(Installed::new(plugin, settings)));
+        let instant = Instant::now();
+        let mut character = Character::new(&Settings::default(), Rng::with_seed(0));
+        character.arrive(Animation::Show, instant);
         Self {
             plugins,
-            character: Character::new(&Settings::default(), Rng::with_seed(0)),
+            character,
             moment: Moment {
-                instant: Instant::now(),
+                instant,
                 local: date(2001, 10, 25).at(9, 0, 0, 0),
             },
             today: None,
@@ -116,6 +120,10 @@ impl Harness {
                 Entry::Submenu { .. } | Entry::Separator => None,
             })
             .collect()
+    }
+
+    pub fn celebrates(&self) -> bool {
+        self.character.is_busy_with(Animation::Congratulate)
     }
 
     pub fn message(&self) -> Option<String> {

@@ -80,6 +80,10 @@ impl<P: Plugin> Context<'_, P> {
     pub fn play(&mut self, animation: Animation) {
         self.character.play(animation);
     }
+
+    pub fn celebrate(&mut self) {
+        self.character.celebrate();
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

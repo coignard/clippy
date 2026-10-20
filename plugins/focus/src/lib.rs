@@ -92,8 +92,17 @@ impl Plugin for Focus {
                 Question::new("What are you focusing on?", Action::Set)
                     .draft(self.current.as_deref().unwrap_or_default()),
             ),
-            Action::Set(focus) => self.current = (!focus.is_empty()).then_some(focus),
-            Action::Clear => self.current = None,
+            Action::Set(focus) if focus.is_empty() => self.clear(cx),
+            Action::Set(focus) => self.current = Some(focus),
+            Action::Clear => self.clear(cx),
+        }
+    }
+}
+
+impl Focus {
+    fn clear(&mut self, cx: &mut Context<'_, Self>) {
+        if self.current.take().is_some() {
+            cx.celebrate();
         }
     }
 }
@@ -170,6 +179,35 @@ mod tests {
         focus.choose("Edit Focus...");
         focus.answer("");
         assert_eq!(focus.message(), None);
+    }
+
+    #[test]
+    fn clearing_the_focus_ticks_it_off() {
+        let mut focus = focused_on("Ship it");
+        focus.press(Settings::default().clear_shortcut);
+        assert!(focus.celebrates());
+        for blank in ["", "   "] {
+            let mut focus = focused_on("Ship it");
+            focus.choose("Edit Focus...");
+            assert!(!focus.celebrates());
+            focus.answer(blank);
+            assert!(focus.celebrates(), "{blank:?}");
+        }
+    }
+
+    #[test]
+    fn only_a_focus_that_was_there_gets_ticked_off() {
+        let mut focus = Harness::new(Focus::default());
+        focus.choose("Set Focus...");
+        focus.answer("");
+        assert!(!focus.celebrates());
+        let mut focus = focused_on("Ship it");
+        focus.choose("Edit Focus...");
+        focus.answer("Ship it today");
+        assert!(!focus.celebrates());
+        focus.choose("Edit Focus...");
+        focus.cancel();
+        assert!(!focus.celebrates());
     }
 
     #[test]
