@@ -8,6 +8,8 @@
 Clippy, the Office Assistant, on the macOS desktop
 
 [![CI](https://github.com/coignard/clippy/workflows/CI/badge.svg)](https://github.com/coignard/clippy/actions)
+[![CodeQL](https://github.com/coignard/clippy/workflows/CodeQL/badge.svg)](https://github.com/coignard/clippy/security/code-scanning)
+[![codecov](https://codecov.io/gh/coignard/clippy/graph/badge.svg?token=OLV8LPJYDS)](https://codecov.io/gh/coignard/clippy)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/coignard)
 
