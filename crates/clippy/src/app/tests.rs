@@ -86,7 +86,11 @@ impl Plugin for Note {
                     .draft(self.text.as_deref().unwrap_or_default()),
             ),
             NoteAction::Keep(text) => self.text = (!text.is_empty()).then_some(text),
-            NoteAction::Erase => self.text = None,
+            NoteAction::Erase => {
+                if self.text.take().is_some() {
+                    cx.celebrate();
+                }
+            }
         }
     }
 }
@@ -1079,6 +1083,50 @@ fn summoned_clippy_can_hide_again_once_the_plugin_has_nothing_to_show() {
     let now = settle(&mut app, now, App::is_present);
     app.handle(Event::Cancel, now);
     settle(&mut app, now, is_absent);
+}
+
+#[test]
+fn a_summons_lasts_through_the_congratulations() {
+    let directory = TempDir::new().unwrap();
+    let settings = Settings {
+        after_summons: AfterSummons::Hide,
+        ..Settings::default()
+    };
+    let (mut app, now) = launch(&directory, settings);
+    app.handle(Event::Command(Command::Hide), now);
+    let now = settle(&mut app, now, is_absent);
+    app.handle(Event::Shortcut(WRITE), now);
+    let now = settle(&mut app, now, App::is_present);
+    answer(&mut app, "Ship it", now);
+    app.handle(Event::Shortcut(ERASE), now);
+    assert!(celebrates(&app));
+    let now = settle(&mut app, now, |app| {
+        app.character.is_performing() && celebrates(app)
+    });
+    let now = settle(&mut app, now, |app| !celebrates(app));
+    assert!(app.is_present());
+    settle(&mut app, now, is_absent);
+}
+
+#[test]
+fn hiding_cuts_the_congratulations_short() {
+    let directory = TempDir::new().unwrap();
+    let settings = Settings {
+        after_summons: AfterSummons::Hide,
+        hide_at_once: true,
+        ..Settings::default()
+    };
+    let (mut app, now) = launch(&directory, settings);
+    app.handle(Event::Command(Command::Hide), now);
+    let now = settle(&mut app, now, is_absent);
+    app.handle(Event::Shortcut(WRITE), now);
+    let now = settle(&mut app, now, App::is_present);
+    answer(&mut app, "Ship it", now);
+    app.handle(Event::Shortcut(ERASE), now);
+    app.handle(Event::Command(Command::Hide), now);
+    assert!(!celebrates(&app));
+    let gone = settle(&mut app, now, is_absent);
+    assert!(gone - now < QUICK);
 }
 
 #[test]

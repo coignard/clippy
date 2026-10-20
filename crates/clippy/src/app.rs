@@ -386,10 +386,11 @@ impl App {
         let Some(summons) = self.visibility.summons() else {
             return;
         };
-        let lasting = match summons.lasts {
-            Lasts::WhileAsking => self.plugins.asker() == Some(summons.owner),
-            Lasts::WhileShowing => self.plugins.shows_anything(summons.owner, due),
-        };
+        let lasting = self.character.is_busy_with(Animation::Congratulate)
+            || match summons.lasts {
+                Lasts::WhileAsking => self.plugins.asker() == Some(summons.owner),
+                Lasts::WhileShowing => self.plugins.shows_anything(summons.owner, due),
+            };
         if !lasting {
             self.visibility.end_summons();
         }

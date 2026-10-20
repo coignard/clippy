@@ -212,8 +212,8 @@ impl Character {
     }
 
     pub(crate) fn celebrate(&mut self) {
-        if let State::Performing { playback, .. } = &mut self.state {
-            playback.exit();
+        if let State::Performing { playback, .. } | State::Idling(playback) = &mut self.state {
+            playback.hurry();
         }
         self.queue.clear();
         self.play(Animation::Congratulate);
@@ -895,6 +895,58 @@ mod tests {
             matches!(&clippy.state, State::Performing { playback, .. }
                 if playback.plays(ANIMATIONS.clip(Animation::Congratulate)))
         });
+    }
+
+    #[test]
+    fn congratulations_cut_a_beckon_short_without_skipping_frames() {
+        let rest = &ANIMATIONS.clip(Animation::RestPose).frames[0].images;
+        let congratulate = ANIMATIONS.clip(Animation::Congratulate);
+        for beckon in [
+            Animation::GetAttention,
+            Animation::GestureUp,
+            Animation::GestureDown,
+        ] {
+            for steps in 0..ANIMATIONS.clip(beckon).frames.len() {
+                let (mut clippy, mut now) = present(&Settings::default());
+                clippy.play(beckon);
+                clippy.advance(now);
+                for _ in 0..steps {
+                    now = clippy.deadline().unwrap();
+                    clippy.advance(now);
+                }
+                clippy.celebrate();
+                let start = now;
+                let mut last = clippy.frame().unwrap();
+                while !matches!(&clippy.state, State::Performing { playback, .. }
+                    if playback.plays(congratulate))
+                {
+                    last = clippy.frame().unwrap();
+                    now = clippy.deadline().unwrap();
+                    clippy.advance(now);
+                }
+                assert_eq!(&last.images, rest, "{beckon:?} after {steps} frames");
+                assert!(
+                    now - start <= Duration::from_millis(1200),
+                    "{beckon:?} after {steps} frames took {:?}",
+                    now - start
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn congratulations_cut_idling_short() {
+        let (mut clippy, now) = present(&Settings {
+            idle_pause: Duration::ZERO..=Duration::ZERO,
+            ..Settings::default()
+        });
+        let now = settle(&mut clippy, now, is_idling);
+        clippy.celebrate();
+        let started = settle(&mut clippy, now, |clippy| {
+            matches!(&clippy.state, State::Performing { playback, .. }
+                if playback.plays(ANIMATIONS.clip(Animation::Congratulate)))
+        });
+        assert!(started - now <= Duration::from_millis(1200));
     }
 
     #[test]

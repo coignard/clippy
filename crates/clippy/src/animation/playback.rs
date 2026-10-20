@@ -16,19 +16,29 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::ptr;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use fastrand::Rng;
 
 use crate::animation::{Clip, Frame};
 use crate::sound::Sound;
 
+const HURRIED_HOLD: Duration = Duration::from_millis(100);
+
 pub(crate) struct Playback<'a> {
     clip: &'a Clip,
     frame: usize,
-    exiting: bool,
+    pace: Pace,
     vanishing: bool,
     next_step: Option<Instant>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pace {
+    Playing,
+    Exiting,
+    Hurrying,
+    Rewinding,
 }
 
 impl<'a> Playback<'a> {
@@ -36,7 +46,7 @@ impl<'a> Playback<'a> {
         Self {
             clip,
             frame: 0,
-            exiting: false,
+            pace: Pace::Playing,
             vanishing: false,
             next_step: Some(now + clip.frames[0].duration),
         }
@@ -55,7 +65,7 @@ impl<'a> Playback<'a> {
         Playback {
             clip,
             frame,
-            exiting: false,
+            pace: Pace::Playing,
             vanishing: false,
             next_step: Some(now + clip.frames[frame].duration),
         }
@@ -75,11 +85,29 @@ impl<'a> Playback<'a> {
     }
 
     pub(crate) fn exit(&mut self) {
-        self.exiting = true;
+        if self.pace == Pace::Playing {
+            self.pace = Pace::Exiting;
+        }
+    }
+
+    pub(crate) fn hurry(&mut self) {
+        if self.is_hurried() {
+            return;
+        }
+        self.pace = Pace::Hurrying;
+        if self.rewinds_sooner() {
+            self.pace = Pace::Rewinding;
+        }
+        let duration = self.frame().duration;
+        if let Some(at) = &mut self.next_step
+            && let Some(cut) = duration.checked_sub(HURRIED_HOLD)
+        {
+            *at = at.checked_sub(cut).unwrap_or(*at);
+        }
     }
 
     pub(crate) fn is_exiting(&self) -> bool {
-        self.exiting
+        self.pace != Pace::Playing
     }
 
     pub(crate) fn is_finished(&self) -> bool {
@@ -94,21 +122,59 @@ impl<'a> Playback<'a> {
         while let Some(at) = self.next_step
             && now >= at
         {
-            if self.frame == self.last_frame() {
+            let Some(next) = self.following(rng) else {
                 self.next_step = None;
-            } else {
-                self.frame = self.next_frame(rng);
-                let frame = self.frame();
+                break;
+            };
+            self.frame = next;
+            let frame = self.frame();
+            if self.pace != Pace::Rewinding {
                 sounds.extend(frame.sound);
-                self.next_step =
-                    (!self.vanishing || frame.shows_clippy()).then(|| at + frame.duration);
             }
+            self.next_step =
+                (!self.vanishing || frame.shows_clippy()).then(|| at + self.hold(self.frame));
         }
+    }
+
+    fn following(&self, rng: &mut Rng) -> Option<usize> {
+        if self.pace == Pace::Rewinding {
+            self.frame.checked_sub(1)
+        } else {
+            (self.frame != self.last_frame()).then(|| self.next_frame(rng))
+        }
+    }
+
+    fn hold(&self, frame: usize) -> Duration {
+        let duration = self.clip.frames[frame].duration;
+        if self.is_hurried() {
+            duration.min(HURRIED_HOLD)
+        } else {
+            duration
+        }
+    }
+
+    fn is_hurried(&self) -> bool {
+        matches!(self.pace, Pace::Hurrying | Pace::Rewinding)
+    }
+
+    fn rewinds_sooner(&self) -> bool {
+        let frames = &self.clip.frames;
+        if frames[0].images != frames[self.last_frame()].images {
+            return false;
+        }
+        let rewinding: Duration = (0..self.frame).map(|frame| self.hold(frame)).sum();
+        let mut finishing = Duration::ZERO;
+        let mut frame = self.frame;
+        while frame != self.last_frame() && finishing <= rewinding {
+            frame = frames[frame].exit.unwrap_or(frame + 1);
+            finishing += self.hold(frame);
+        }
+        rewinding < finishing
     }
 
     fn next_frame(&self, rng: &mut Rng) -> usize {
         let frame = self.frame();
-        if self.exiting {
+        if self.is_exiting() {
             frame.exit.unwrap_or(self.frame + 1)
         } else {
             frame.branch(rng).unwrap_or(self.frame + 1)
@@ -125,7 +191,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::animation::Branch;
+    use crate::animation::{Branch, FrameImage};
 
     fn frame(milliseconds: u64) -> Frame {
         Frame {
@@ -251,6 +317,91 @@ mod tests {
         walk(&mut playback, now, 1);
         playback.exit();
         assert_eq!(walk(&mut playback, now, 1), [1, 3]);
+    }
+
+    fn noisy(milliseconds: u64) -> Frame {
+        Frame {
+            sound: Some(Sound::new(0)),
+            ..frame(milliseconds)
+        }
+    }
+
+    #[test]
+    fn hurrying_rewinds_when_the_start_is_closer() {
+        let clip = Clip {
+            frames: vec![
+                frame(10),
+                noisy(10),
+                frame(10),
+                frame(10),
+                frame(10),
+                frame(10),
+            ],
+        };
+        let now = Instant::now();
+        let mut playback = Playback::start(&clip, now);
+        walk(&mut playback, now, 2);
+        playback.hurry();
+        let mut sounds = Vec::new();
+        let mut rng = Rng::with_seed(0);
+        let mut visited = vec![playback.frame];
+        while let Some(at) = playback.deadline() {
+            playback.advance(at, &mut rng, &mut sounds);
+            visited.push(playback.frame);
+        }
+        assert_eq!(visited, [2, 1, 0, 0]);
+        assert_eq!(sounds, []);
+    }
+
+    #[test]
+    fn hurrying_follows_the_exit_when_the_end_is_closer() {
+        let clip = Clip {
+            frames: vec![frame(10), frame(10), frame(10), frame(10), frame(10)],
+        };
+        let now = Instant::now();
+        let mut playback = Playback::start(&clip, now);
+        walk(&mut playback, now, 3);
+        playback.hurry();
+        assert_eq!(walk(&mut playback, now, 2), [3, 4]);
+        assert!(playback.is_finished());
+    }
+
+    #[test]
+    fn hurrying_never_rewinds_into_a_different_pose() {
+        let ending = Frame {
+            images: vec![FrameImage {
+                image: 1,
+                x: 0,
+                y: 0,
+            }],
+            ..frame(10)
+        };
+        let clip = Clip {
+            frames: vec![frame(10), frame(10), frame(10), frame(10), ending],
+        };
+        let now = Instant::now();
+        let mut playback = Playback::start(&clip, now);
+        walk(&mut playback, now, 1);
+        playback.hurry();
+        assert_eq!(walk(&mut playback, now, 3), [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn hurrying_cuts_long_holds() {
+        let clip = Clip {
+            frames: vec![frame(100), frame(2000), frame(2000), frame(100)],
+        };
+        let start = Instant::now();
+        let mut playback = Playback::start(&clip, start);
+        walk(&mut playback, start, 2);
+        playback.hurry();
+        assert_eq!(
+            playback.deadline(),
+            Some(start + Duration::from_millis(2100) + HURRIED_HOLD)
+        );
+        let mut rng = Rng::with_seed(0);
+        playback.advance(playback.deadline().unwrap(), &mut rng, &mut Vec::new());
+        assert_eq!(playback.frame, 3);
     }
 
     #[test]
