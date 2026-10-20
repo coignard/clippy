@@ -1103,9 +1103,9 @@ fn a_summons_lasts_through_the_congratulations() {
     let now = settle(&mut app, now, |app| {
         app.character.is_performing() && celebrates(app)
     });
-    let now = settle(&mut app, now, |app| !celebrates(app));
-    assert!(app.is_present());
-    settle(&mut app, now, is_absent);
+    let done = settle(&mut app, now, |app| !celebrates(app));
+    let gone = settle(&mut app, done, is_absent);
+    assert!(gone - done < QUICK);
 }
 
 #[test]
@@ -1375,6 +1375,21 @@ fn ticking_the_box_congratulates_and_retires_the_reminder() {
     let now = settle(&mut app, now, noticed);
     assert_eq!(now, day.at(10, 30));
     assert_eq!(notice(&app), Some((WATER, UNTICKED)));
+}
+
+#[test]
+fn hidden_clippy_goes_back_into_hiding_right_after_the_congratulations() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(9, 59);
+    let (mut app, now) = with_chores_and(&directory, &day, AfterSummons::Hide);
+    app.handle(Event::Command(Command::Hide), now);
+    let now = settle(&mut app, now, is_absent);
+    let now = settle(&mut app, now, noticed);
+    app.handle(Event::CheckboxPress, now);
+    app.handle(Event::CheckboxRelease { inside: true }, now);
+    let done = settle(&mut app, now, quiet);
+    let gone = settle(&mut app, done, is_absent);
+    assert!(gone - done < QUICK);
 }
 
 #[test]

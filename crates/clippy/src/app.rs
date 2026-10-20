@@ -301,6 +301,14 @@ impl App {
     }
 
     fn settle(&mut self, moment: Moment) {
+        let celebrating = self.is_celebrating();
+        self.catch_up(moment);
+        if celebrating && !self.is_celebrating() {
+            self.catch_up(moment);
+        }
+    }
+
+    fn catch_up(&mut self, moment: Moment) {
         let now = moment.instant;
         let mut due = self.plugins.notices(moment.local);
         self.end_finished_summons(&due);
@@ -316,8 +324,9 @@ impl App {
         if self.character.presence() == Presence::Absent {
             self.plugins.dismiss();
         }
-        let celebrating = self.character.is_busy_with(Animation::Congratulate);
-        let change = self.notices.update(due, self.is_present(), celebrating);
+        let change = self
+            .notices
+            .update(due, self.is_present(), self.is_celebrating());
         if change.appeared {
             self.visibility.keep(self.settings.after_summons);
             self.character.beckon(self.side_of(self.notices.content()));
@@ -386,7 +395,7 @@ impl App {
         let Some(summons) = self.visibility.summons() else {
             return;
         };
-        let lasting = self.character.is_busy_with(Animation::Congratulate)
+        let lasting = self.is_celebrating()
             || match summons.lasts {
                 Lasts::WhileAsking => self.plugins.asker() == Some(summons.owner),
                 Lasts::WhileShowing => self.plugins.shows_anything(summons.owner, due),
@@ -489,6 +498,10 @@ impl App {
 
     fn is_present(&self) -> bool {
         self.character.presence() == Presence::Present
+    }
+
+    fn is_celebrating(&self) -> bool {
+        self.character.is_busy_with(Animation::Congratulate)
     }
 
     fn scale(&self) -> i32 {
