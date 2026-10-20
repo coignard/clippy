@@ -1,20 +1,3 @@
-// This file is part of Clippy.
-//
-// Copyright (c) 2026  René Coignard <contact@renecoignard.com>
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 use std::num::NonZeroU8;
 use std::ops::RangeInclusive;
 use std::time::Duration;
@@ -37,6 +20,7 @@ pub struct Settings {
     #[serde(rename = "attention_span_seconds", with = "seconds")]
     pub attention_span: Duration,
     pub hide_in_full_screen: bool,
+    pub hide_at_once: bool,
     pub after_summons: AfterSummons,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plugins: Option<Vec<String>>,
@@ -72,6 +56,7 @@ impl Default for Settings {
             animation_timeout: Duration::from_secs(5),
             attention_span: Duration::from_secs(60),
             hide_in_full_screen: true,
+            hide_at_once: false,
             after_summons: AfterSummons::Stay,
             plugins: None,
         }
@@ -135,6 +120,7 @@ mod tests {
              animation_timeout_seconds = 5\n\
              attention_span_seconds = 60\n\
              hide_in_full_screen = true\n\
+             hide_at_once = false\n\
              after_summons = \"stay\"\n"
         );
         assert_eq!(

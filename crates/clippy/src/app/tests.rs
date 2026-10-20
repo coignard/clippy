@@ -1,20 +1,3 @@
-// This file is part of Clippy.
-//
-// Copyright (c) 2026  René Coignard <contact@renecoignard.com>
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::num::NonZeroU8;
@@ -27,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 
 use super::*;
+use crate::assets::ANIMATIONS;
 use crate::balloon::{Checkbox, Motion};
 use crate::character::Look;
 use crate::plugin::{Context, MenuItem, Message, NoSettings, Notice, Plugin, Question};
@@ -969,6 +953,26 @@ fn quitting_waits_for_goodbye() {
     assert!(!app.is_finished());
     let end = settle(&mut app, now, App::is_finished);
     assert!(end - now > QUICK);
+}
+
+#[test]
+fn hiding_at_once_does_not_wait_for_a_trick_to_end() {
+    let directory = TempDir::new().unwrap();
+    let settings = Settings {
+        hide_at_once: true,
+        ..Settings::default()
+    };
+    let (mut app, now) = launch(&directory, settings);
+    app.handle(Event::ClippyDoubleClick, now);
+    let now = settle(&mut app, now, |app| app.character.is_performing());
+    app.handle(Event::Command(Command::Hide), now);
+    let frames = &ANIMATIONS.clip(Animation::Hide).frames;
+    let vanishes = frames
+        .iter()
+        .position(|frame| !frame.shows_clippy())
+        .unwrap();
+    let shrinking: Duration = frames[..vanishes].iter().map(|frame| frame.duration).sum();
+    assert_eq!(settle(&mut app, now, is_absent) - now, shrinking);
 }
 
 #[test]

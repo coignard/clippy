@@ -1,20 +1,3 @@
-// This file is part of Clippy.
-//
-// Copyright (c) 2026  René Coignard <contact@renecoignard.com>
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 mod builder;
 mod notices;
 mod visibility;
@@ -431,10 +414,13 @@ impl App {
                 self.character.arrive(arrival, now);
             }
             (false, Presence::Arriving | Presence::Present) => {
-                let by = self
-                    .visibility
-                    .is_stepping_aside()
-                    .then_some(now + STEPPING_ASIDE);
+                let by = if self.settings.hide_at_once {
+                    Some(now)
+                } else {
+                    self.visibility
+                        .is_stepping_aside()
+                        .then_some(now + STEPPING_ASIDE)
+                };
                 self.character.leave(Animation::Hide, by);
             }
             _ => {}
