@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- Fixed some of the animations
+
 ## 0.1.2
 
 - Clippy comes back to where you left him on the desktop
