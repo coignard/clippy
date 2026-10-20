@@ -131,8 +131,9 @@ impl<'a> Playback<'a> {
             if self.pace != Pace::Rewinding {
                 sounds.extend(frame.sound);
             }
+            let since = if self.is_hurried() { now } else { at };
             self.next_step =
-                (!self.vanishing || frame.shows_clippy()).then(|| at + self.hold(self.frame));
+                (!self.vanishing || frame.shows_clippy()).then(|| since + self.hold(self.frame));
         }
     }
 
@@ -402,6 +403,28 @@ mod tests {
         let mut rng = Rng::with_seed(0);
         playback.advance(playback.deadline().unwrap(), &mut rng, &mut Vec::new());
         assert_eq!(playback.frame, 3);
+    }
+
+    #[test]
+    fn hurrying_never_skips_frames_to_catch_up() {
+        let clip = Clip {
+            frames: vec![
+                frame(10),
+                frame(10),
+                frame(10),
+                frame(1000),
+                frame(10),
+                frame(10),
+            ],
+        };
+        let start = Instant::now();
+        let mut playback = Playback::start(&clip, start);
+        walk(&mut playback, start, 3);
+        playback.hurry();
+        let late = start + Duration::from_millis(900);
+        playback.advance(late, &mut Rng::with_seed(0), &mut Vec::new());
+        assert_eq!(playback.frame, 4);
+        assert_eq!(playback.deadline(), Some(late + Duration::from_millis(10)));
     }
 
     #[test]

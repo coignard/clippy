@@ -458,6 +458,7 @@ fn beckons(app: &App) -> bool {
         Animation::GestureDown,
         Animation::GestureLeft,
         Animation::GestureRight,
+        Animation::Searching,
     ]
     .into_iter()
     .any(|animation| app.character.is_busy_with(animation))

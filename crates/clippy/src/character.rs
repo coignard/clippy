@@ -203,12 +203,14 @@ impl Character {
             Side::Above => Animation::GestureUp,
             Side::Below => Animation::GestureDown,
         };
-        let animation = match self.beckoned {
-            Some(Animation::GetAttention) => pointing,
-            Some(last) if last == pointing => Animation::GetAttention,
-            _ if self.rng.bool() => pointing,
-            _ => Animation::GetAttention,
-        };
+        let fresh: Vec<Animation> = [pointing, Animation::GetAttention, Animation::Searching]
+            .into_iter()
+            .filter(|&animation| Some(animation) != self.beckoned)
+            .collect();
+        let animation = self
+            .rng
+            .choice(fresh)
+            .expect("Clippy should know more than one way to beckon");
         self.beckoned = Some(animation);
         self.play(animation);
     }
@@ -912,6 +914,7 @@ mod tests {
             Animation::GetAttention,
             Animation::GestureUp,
             Animation::GestureDown,
+            Animation::Searching,
         ] {
             for steps in 0..ANIMATIONS.clip(beckon).frames.len() {
                 let (mut clippy, mut now) = present(&Settings::default());
@@ -921,9 +924,10 @@ mod tests {
                     now = clippy.deadline().unwrap();
                     clippy.advance(now);
                 }
-                clippy.celebrate();
-                let start = now;
                 let mut last = clippy.frame().unwrap();
+                clippy.celebrate();
+                clippy.advance(now);
+                let start = now;
                 while !matches!(&clippy.state, State::Performing { playback, .. }
                     if playback.plays(congratulate))
                 {
@@ -933,7 +937,7 @@ mod tests {
                 }
                 assert_eq!(&last.images, rest, "{beckon:?} after {steps} frames");
                 assert!(
-                    now - start <= Duration::from_millis(1200),
+                    now - start <= Duration::from_millis(1400),
                     "{beckon:?} after {steps} frames took {:?}",
                     now - start
                 );
@@ -966,13 +970,25 @@ mod tests {
             assert_ne!(seen.last(), Some(&played));
             seen.push(played);
         }
-        assert!(
-            seen.iter()
-                .all(|&played| matches!(played, Animation::GetAttention | Animation::GestureUp))
-        );
-        clippy.beckon(Side::Below);
-        clippy.beckon(Side::Below);
-        assert!(clippy.queue.contains(&Animation::GestureDown));
+        for beckon in [
+            Animation::GetAttention,
+            Animation::GestureUp,
+            Animation::Searching,
+        ] {
+            assert!(seen.contains(&beckon), "{beckon:?}");
+        }
+        assert!(seen.iter().all(|&played| matches!(
+            played,
+            Animation::GetAttention | Animation::GestureUp | Animation::Searching
+        )));
+        let below: Vec<Animation> = (0..10)
+            .map(|_| {
+                clippy.beckon(Side::Below);
+                clippy.queue.pop_back().unwrap()
+            })
+            .collect();
+        assert!(below.contains(&Animation::GestureDown));
+        assert!(!below.contains(&Animation::GestureUp));
     }
 
     #[test]
