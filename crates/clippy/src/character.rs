@@ -40,6 +40,7 @@ pub(crate) struct Character {
     field: FieldState,
     typing_until: Option<Instant>,
     beckoned: Option<Animation>,
+    trick: Option<Animation>,
     sounds: Vec<Sound>,
     idleness: Idleness,
     bedtime: bool,
@@ -111,6 +112,7 @@ impl Character {
             field: FieldState::Closed,
             typing_until: None,
             beckoned: None,
+            trick: None,
             sounds: Vec::new(),
             idleness: Idleness::default(),
             bedtime: false,
@@ -229,7 +231,12 @@ impl Character {
 
     pub(crate) fn animate(&mut self) {
         let trick = Animation::random_trick(&mut self.rng);
+        self.trick = Some(trick);
         self.play(trick);
+    }
+
+    pub(crate) fn is_showing_off(&self) -> bool {
+        self.trick.is_some_and(|trick| self.is_busy_with(trick))
     }
 
     pub(crate) fn set_hovered(&mut self, hovered: bool, now: Instant) {

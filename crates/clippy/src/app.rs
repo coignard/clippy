@@ -260,7 +260,7 @@ impl App {
             }
             Event::PointerEnter => self.character.set_hovered(true, now),
             Event::PointerLeave => self.character.set_hovered(false, now),
-            Event::ClippyDoubleClick if self.is_present() => self.character.animate(),
+            Event::ClippyDoubleClick if self.is_present() => self.show_off(),
             Event::MessageDoubleClick if self.is_present() => {
                 self.plugins.double_click(&mut self.character, moment);
             }
@@ -301,9 +301,9 @@ impl App {
     }
 
     fn settle(&mut self, moment: Moment) {
-        let celebrating = self.is_celebrating();
+        let performing = self.is_performing();
         self.catch_up(moment);
-        if celebrating && !self.is_celebrating() {
+        if performing && !self.is_performing() {
             self.catch_up(moment);
         }
     }
@@ -312,6 +312,9 @@ impl App {
         let now = moment.instant;
         let mut due = self.plugins.notices(moment.local);
         self.end_finished_summons(&due);
+        if !self.character.is_showing_off() {
+            self.visibility.stop_lingering();
+        }
         let need = self.need(&due);
         self.reconcile(now, need);
         if self.visibility.is_stepping_aside() {
@@ -359,7 +362,7 @@ impl App {
                 Presence::Arriving | Presence::Present => self.hide(moment),
             },
             Command::Hide => self.hide(moment),
-            Command::Animate => self.character.animate(),
+            Command::Animate => self.show_off(),
             Command::Quit => {
                 self.quitting = true;
                 self.character.say_goodbye();
@@ -373,6 +376,13 @@ impl App {
             self.run(Command::Toggle, moment);
         } else if let Some(item) = self.plugins.item_for(shortcut, moment.local) {
             self.run(Command::Plugin(item), moment);
+        }
+    }
+
+    fn show_off(&mut self) {
+        self.character.animate();
+        if self.character.is_showing_off() {
+            self.visibility.linger();
         }
     }
 
@@ -502,6 +512,10 @@ impl App {
 
     fn is_celebrating(&self) -> bool {
         self.character.is_busy_with(Animation::Congratulate)
+    }
+
+    fn is_performing(&self) -> bool {
+        self.is_celebrating() || self.character.is_showing_off()
     }
 
     fn scale(&self) -> i32 {

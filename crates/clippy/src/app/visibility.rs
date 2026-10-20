@@ -24,6 +24,7 @@ pub(super) struct Visibility {
     hidden: bool,
     full_screen: FullScreen,
     summons: Option<Summons>,
+    lingering: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,6 +73,7 @@ impl Visibility {
     pub(super) fn hide(&mut self) {
         self.hidden = true;
         self.summons = None;
+        self.lingering = false;
         if self.full_screen == FullScreen::ShownAnyway {
             self.full_screen = FullScreen::SteppingAside;
         }
@@ -80,6 +82,7 @@ impl Visibility {
     pub(super) fn show(&mut self) {
         self.hidden = false;
         self.summons = None;
+        self.lingering = false;
         if self.full_screen != FullScreen::Off {
             self.full_screen = FullScreen::ShownAnyway;
         }
@@ -114,11 +117,22 @@ impl Visibility {
         self.summons = None;
     }
 
+    pub(super) fn linger(&mut self) {
+        if !self.is_welcome() {
+            self.lingering = true;
+        }
+    }
+
+    pub(super) fn stop_lingering(&mut self) {
+        self.lingering = false;
+    }
+
     pub(super) fn set_full_screen(&mut self, full_screen: bool) {
         match (full_screen, self.full_screen) {
             (true, FullScreen::Off) => {
                 self.full_screen = FullScreen::SteppingAside;
                 self.summons = None;
+                self.lingering = false;
             }
             (false, FullScreen::SteppingAside | FullScreen::ShownAnyway) => {
                 self.full_screen = FullScreen::Off;
@@ -137,7 +151,8 @@ impl Visibility {
             Need::Polite => !self.is_stepping_aside(),
             Need::Urgent => true,
         };
-        self.debut != Debut::Waiting && (self.is_welcome() || self.summons.is_some() || needed)
+        self.debut != Debut::Waiting
+            && (self.is_welcome() || self.summons.is_some() || self.lingering || needed)
     }
 
     pub(super) fn arrival(&mut self) -> Animation {
@@ -282,6 +297,26 @@ mod tests {
         assert!(!visibility.wants_clippy(Need::None));
         visibility.keep(AfterSummons::Stay);
         assert!(visibility.wants_clippy(Need::None));
+    }
+
+    #[test]
+    fn a_visiting_clippy_can_linger_until_told_otherwise() {
+        let mut visibility = hidden();
+        visibility.linger();
+        assert!(visibility.wants_clippy(Need::None));
+        visibility.stop_lingering();
+        assert!(!visibility.wants_clippy(Need::None));
+        visibility.linger();
+        visibility.hide();
+        assert!(!visibility.wants_clippy(Need::None));
+    }
+
+    #[test]
+    fn a_welcome_clippy_never_lingers() {
+        let mut visibility = launched();
+        visibility.linger();
+        visibility.hide();
+        assert!(!visibility.wants_clippy(Need::None));
     }
 
     #[test]

@@ -1393,6 +1393,36 @@ fn hidden_clippy_goes_back_into_hiding_right_after_the_congratulations() {
 }
 
 #[test]
+fn a_visiting_clippy_finishes_his_trick_before_hiding_again() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(9, 59);
+    let (mut app, now) = with_chores_and(&directory, &day, AfterSummons::Hide);
+    app.handle(Event::Command(Command::Hide), now);
+    let now = settle(&mut app, now, is_absent);
+    let now = settle(&mut app, now, noticed);
+    app.handle(Event::ClippyDoubleClick, now);
+    assert!(quiet(&app));
+    let now = settle(&mut app, now, |app| app.character.is_performing());
+    assert!(app.character.is_showing_off());
+    let done = settle(&mut app, now, |app| !app.character.is_showing_off());
+    let gone = settle(&mut app, done, is_absent);
+    assert!(gone - done < QUICK);
+}
+
+#[test]
+fn hiding_cuts_a_visiting_clippy_trick_short() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(9, 59);
+    let (mut app, now) = with_chores_and(&directory, &day, AfterSummons::Hide);
+    app.handle(Event::Command(Command::Hide), now);
+    let now = settle(&mut app, now, is_absent);
+    let now = settle(&mut app, now, noticed);
+    app.handle(Event::ClippyDoubleClick, now);
+    app.handle(Event::Command(Command::Hide), now);
+    assert_eq!(app.character.presence(), Presence::Leaving);
+}
+
+#[test]
 fn dragging_off_the_box_takes_the_tick_back() {
     let directory = TempDir::new().unwrap();
     let day = Day::starting_at(9, 59);
