@@ -1207,19 +1207,11 @@ mod tests {
                 .position(|frame| !frame.shows_clippy())
                 .unwrap();
             let gone: Duration = frames[..vanishes].iter().map(|frame| frame.duration).sum();
-            let back = gone + frames[vanishes].duration;
-
             let (mut clippy, now) = present(&Settings::default());
             clippy.leave(animation, None);
             let leaving = settle(&mut clippy, now, is_leaving);
             let absent = settle(&mut clippy, leaving, is_absent);
             assert_eq!(absent - leaving, gone, "{animation:?}");
-
-            let (mut clippy, now) = present(&Settings::default());
-            clippy.leave(animation, None);
-            let leaving = settle(&mut clippy, now, is_leaving);
-            clippy.advance(leaving + back);
-            assert!(is_absent(&clippy), "{animation:?}");
         }
     }
 

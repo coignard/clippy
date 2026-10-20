@@ -131,9 +131,10 @@ impl<'a> Playback<'a> {
             if self.pace != Pace::Rewinding {
                 sounds.extend(frame.sound);
             }
-            let since = if self.is_hurried() { now } else { at };
-            self.next_step =
-                (!self.vanishing || frame.shows_clippy()).then(|| since + self.hold(self.frame));
+            let hold = self.hold(self.frame);
+            let on_time = at + hold;
+            let next = if on_time > now { on_time } else { now + hold };
+            self.next_step = (!self.vanishing || frame.shows_clippy()).then_some(next);
         }
     }
 
@@ -255,22 +256,35 @@ mod tests {
     }
 
     #[test]
-    fn keeps_to_the_schedule_when_woken_late() {
+    fn keeps_to_the_schedule_when_woken_a_little_late() {
         let clip = Clip {
             frames: vec![frame(100), frame(100), frame(100), frame(100)],
         };
         let start = Instant::now();
         let mut playback = Playback::start(&clip, start);
         playback.advance(
-            start + Duration::from_millis(250),
+            start + Duration::from_millis(150),
             &mut Rng::with_seed(0),
             &mut Vec::new(),
         );
-        assert_eq!(playback.frame, 2);
+        assert_eq!(playback.frame, 1);
         assert_eq!(
             playback.deadline(),
-            Some(start + Duration::from_millis(300))
+            Some(start + Duration::from_millis(200))
         );
+    }
+
+    #[test]
+    fn never_skips_frames_when_woken_very_late() {
+        let clip = Clip {
+            frames: vec![frame(100), frame(100), frame(100), frame(100)],
+        };
+        let start = Instant::now();
+        let mut playback = Playback::start(&clip, start);
+        let late = start + Duration::from_millis(450);
+        playback.advance(late, &mut Rng::with_seed(0), &mut Vec::new());
+        assert_eq!(playback.frame, 1);
+        assert_eq!(playback.deadline(), Some(late + Duration::from_millis(100)));
     }
 
     #[test]
