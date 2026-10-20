@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Clippy sometimes looks for you through a spyglass when a reminder is due
+
 ## 0.1.3
 
 - Fixed some of the animations
