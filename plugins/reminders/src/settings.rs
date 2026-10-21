@@ -20,6 +20,7 @@ use std::marker::PhantomData;
 use std::str::FromStr;
 
 use clippy::hours::{Hours, TimeOfDay};
+use clippy::shortcut::{Key, Modifiers, Shortcut};
 use jiff::SignedDuration;
 use jiff::civil::{DateTime, Time};
 use serde::de::{self, SeqAccess, Visitor};
@@ -35,6 +36,7 @@ pub struct Settings {
     pub(crate) quiet_hours: Vec<Hours>,
     pub(crate) snooze: Snoozes,
     pub(crate) show_in_full_screen: bool,
+    pub(crate) hide_shortcut: Shortcut,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,6 +111,10 @@ impl Default for Settings {
             quiet_hours: Vec::new(),
             snooze: Snoozes::default(),
             show_in_full_screen: true,
+            hide_shortcut: Shortcut {
+                modifiers: Modifiers::COMMAND.union(Modifiers::SHIFT),
+                key: Key::Delete,
+            },
         }
     }
 }
@@ -320,7 +326,8 @@ mod tests {
             "reminders = []\n\
              quiet_hours = []\n\
              snooze = [\"15m\", \"30m\", \"1h\"]\n\
-             show_in_full_screen = true\n"
+             show_in_full_screen = true\n\
+             hide_shortcut = \"Cmd+Shift+Delete\"\n"
         );
     }
 

@@ -23,9 +23,10 @@ use jiff::civil::{Date, DateTime, date};
 use crate::animation::Animation;
 use crate::app::{Command, Moment};
 use crate::balloon::{Edit, Motion, Prompt};
+use crate::calendar::Agenda;
 use crate::character::Character;
 use crate::menu::Entry;
-use crate::plugin::{Due, Installed, Plugin, Plugins};
+use crate::plugin::{Due, Installed, Plugin, Plugins, Urgency};
 use crate::settings::Settings;
 use crate::shortcut::Shortcut;
 
@@ -62,6 +63,10 @@ impl Harness {
         self.plugins.begin_day(self.moment.local);
     }
 
+    pub fn read_agenda(&mut self, agenda: &Agenda) {
+        self.plugins.read_agenda(agenda);
+    }
+
     pub fn now(&self) -> DateTime {
         self.moment.local
     }
@@ -88,6 +93,14 @@ impl Harness {
 
     pub fn shows_over_full_screen(&self, text: &str) -> bool {
         self.find(text).notice.over_full_screen
+    }
+
+    pub fn shortcut(&self, text: &str) -> Option<Shortcut> {
+        self.find(text).notice.shortcut
+    }
+
+    pub fn urgency(&self, text: &str) -> Urgency {
+        self.find(text).notice.urgency
     }
 
     pub fn next_change(&self) -> Option<DateTime> {
@@ -127,7 +140,7 @@ impl Harness {
     }
 
     pub fn message(&self) -> Option<String> {
-        self.plugins.message()
+        self.plugins.message(self.moment.local)
     }
 
     pub fn question(&self) -> Option<&str> {

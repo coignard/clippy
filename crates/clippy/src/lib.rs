@@ -22,6 +22,7 @@ mod animation;
 mod app;
 mod assets;
 mod balloon;
+pub mod calendar;
 mod character;
 pub mod geometry;
 pub mod graphics;
@@ -42,7 +43,9 @@ pub use app::{App, Builder, Command, Effect, Event};
 pub use balloon::{Edit, Motion, Utf16Range};
 pub use character::portrait;
 pub use hover::Hover;
-pub use plugin::{Context, MenuItem, Message, NoSettings, Notice, Plugin, PluginItem, Question};
+pub use plugin::{
+    Context, MenuItem, Message, NoSettings, Notice, Plugin, PluginItem, Question, Urgency,
+};
 pub use scene::{BalloonScene, Field, Scene};
 pub use settings::{AfterSummons, BalloonTail, Settings};
 pub use sound::Sound;

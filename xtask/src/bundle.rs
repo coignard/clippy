@@ -33,6 +33,7 @@ const EXECUTABLE: &str = "clippy-macos";
 const IDENTIFIER: &str = "com.renecoignard.clippy";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const MINIMUM_SYSTEM: &str = "11.0";
+const CALENDARS_USAGE: &str = "Clippy reminds you of your events and sums up your day.";
 const ARCHITECTURES: [&str; 2] = ["aarch64-apple-darwin", "x86_64-apple-darwin"];
 const UNIVERSAL: &str = "universal-apple-darwin";
 const ICONS: [IconType; 10] = [
@@ -81,6 +82,10 @@ struct Information {
     minimum_system: &'static str,
     #[serde(rename = "LSUIElement")]
     agent: bool,
+    #[serde(rename = "NSCalendarsFullAccessUsageDescription")]
+    calendars_full_access_usage: &'static str,
+    #[serde(rename = "NSCalendarsUsageDescription")]
+    calendars_usage: &'static str,
     #[serde(rename = "NSHighResolutionCapable")]
     high_resolution: bool,
 }
@@ -199,6 +204,8 @@ fn information() -> Information {
         version: VERSION,
         minimum_system: MINIMUM_SYSTEM,
         agent: true,
+        calendars_full_access_usage: CALENDARS_USAGE,
+        calendars_usage: CALENDARS_USAGE,
         high_resolution: true,
     }
 }
@@ -286,6 +293,16 @@ mod tests {
         let information = Value::from_file(contents.join("Info.plist")).unwrap();
         let information = information.as_dictionary().unwrap();
         assert_eq!(information.get("LSUIElement"), Some(&Value::Boolean(true)));
+        for usage in [
+            "NSCalendarsFullAccessUsageDescription",
+            "NSCalendarsUsageDescription",
+        ] {
+            assert_eq!(
+                information.get(usage).and_then(Value::as_string),
+                Some(CALENDARS_USAGE),
+                "{usage}"
+            );
+        }
         assert_eq!(
             information
                 .get("CFBundleIdentifier")

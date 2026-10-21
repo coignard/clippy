@@ -12,8 +12,9 @@ use tempfile::TempDir;
 use super::*;
 use crate::assets::ANIMATIONS;
 use crate::balloon::{Checkbox, Motion};
+use crate::calendar::Appointment;
 use crate::character::Look;
-use crate::plugin::{Context, MenuItem, Message, NoSettings, Notice, Plugin, Question};
+use crate::plugin::{Context, MenuItem, Message, NoSettings, Notice, Plugin, Question, Urgency};
 use crate::settings::AfterSummons;
 use crate::shortcut::{Key, Modifiers};
 use crate::storage::Storage;
@@ -74,7 +75,7 @@ impl Plugin for Note {
         ]
     }
 
-    fn message(&self) -> Option<Message<NoteAction>> {
+    fn message(&self, _: &NoSettings, _: DateTime) -> Option<Message<NoteAction>> {
         let text = self.text.as_ref()?;
         Some(Message::new(text).on_double_click(NoteAction::Write))
     }
@@ -116,7 +117,7 @@ impl Plugin for Greeter {
         vec![MenuItem::new("Introduce Yourself...", GreeterAction::Ask)]
     }
 
-    fn message(&self) -> Option<Message<GreeterAction>> {
+    fn message(&self, _: &NoSettings, _: DateTime) -> Option<Message<GreeterAction>> {
         let name = self.name.as_ref()?;
         Some(Message::new(format!("Hello, {name}!")))
     }
@@ -161,6 +162,7 @@ impl Plugin for Chores {
                 Notice::new(text, text, ChoreAction::Snooze(text.to_owned()))
                     .checkbox(DONE, ChoreAction::Done(text.to_owned()))
                     .over_full_screen(text == WATER)
+                    .shortcut(ERASE)
             })
             .collect()
     }
@@ -240,6 +242,117 @@ impl Plugin for Tally {
 
     fn perform(&mut self, (): (), _: &mut Context<'_, Self>) {
         self.count += 1;
+    }
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct Diary {
+    #[serde(skip)]
+    titles: Vec<String>,
+    opened: u32,
+}
+
+impl Plugin for Diary {
+    const NAME: &'static str = "Diary";
+
+    const READS_CALENDAR: bool = true;
+
+    type Action = ();
+
+    type Settings = NoSettings;
+
+    fn read_agenda(&mut self, agenda: &Agenda) {
+        self.titles = match agenda {
+            Agenda::Read(appointments) => appointments
+                .iter()
+                .map(|appointment| appointment.title.clone())
+                .collect(),
+            Agenda::Unread | Agenda::Denied => Vec::new(),
+        };
+    }
+
+    fn menu(&self, _: &NoSettings, _: DateTime) -> Vec<MenuItem<()>> {
+        self.titles
+            .iter()
+            .map(|title| MenuItem::new(title.clone(), ()))
+            .collect()
+    }
+
+    fn perform(&mut self, (): (), _: &mut Context<'_, Self>) {
+        self.opened += 1;
+    }
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct Meeting {
+    skipped: bool,
+    hidden: bool,
+}
+
+enum MeetingAction {
+    Skip,
+    Hide,
+}
+
+impl Plugin for Meeting {
+    const NAME: &'static str = "Meeting";
+
+    type Action = MeetingAction;
+
+    type Settings = NoSettings;
+
+    fn message(&self, _: &NoSettings, _: DateTime) -> Option<Message<MeetingAction>> {
+        (!self.hidden).then(|| {
+            Message::new("Busy")
+                .on_double_click(MeetingAction::Hide)
+                .shortcut(ERASE)
+        })
+    }
+
+    fn notices(&self, _: &NoSettings, _: DateTime) -> Vec<Notice<MeetingAction>> {
+        (!self.skipped)
+            .then(|| {
+                Notice::new("standup", "Standup", MeetingAction::Skip)
+                    .checkbox("Skip", MeetingAction::Skip)
+                    .celebrates(false)
+            })
+            .into_iter()
+            .collect()
+    }
+
+    fn perform(&mut self, action: MeetingAction, _: &mut Context<'_, Self>) {
+        match action {
+            MeetingAction::Skip => self.skipped = true,
+            MeetingAction::Hide => self.hidden = true,
+        }
+    }
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct Alarm {
+    off: bool,
+}
+
+impl Plugin for Alarm {
+    const NAME: &'static str = "Alarm";
+
+    type Action = ();
+
+    type Settings = NoSettings;
+
+    fn notices(&self, _: &NoSettings, now: DateTime) -> Vec<Notice<()>> {
+        (now.time() >= time(10, 5, 0, 0) && !self.off)
+            .then(|| Notice::new("alarm", "Leave now!", ()).urgency(Urgency::Pressing))
+            .into_iter()
+            .collect()
+    }
+
+    fn changes_at(&self, _: &NoSettings, now: DateTime) -> Option<DateTime> {
+        Some(now.date().at(10, 5, 0, 0)).filter(|&at| at > now)
+    }
+
+    fn perform(&mut self, (): (), _: &mut Context<'_, Self>) {
+        self.off = true;
     }
 }
 
@@ -434,7 +547,7 @@ fn answer(app: &mut App, text: &str, now: Instant) {
 }
 
 fn shown(app: &App) -> Option<String> {
-    let message = app.plugins.message();
+    let message = app.message();
     match app.balloon(message.as_deref())? {
         Content::Message(text) => Some(text.to_owned()),
         Content::Prompt { .. } | Content::Notice { .. } => None,
@@ -609,6 +722,29 @@ fn disabled_items_do_nothing() {
     choose(&mut app, "Erase", now);
     assert_eq!(shown(&app), None);
     assert!(!state.exists());
+}
+
+#[test]
+fn messages_stack_and_a_double_click_reaches_the_one_that_answers_it() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = start(assemble(&directory, enabling(&["Greeter", "Note"])));
+    choose(&mut app, "Introduce Yourself...", now);
+    answer(&mut app, "Ada", now);
+    choose(&mut app, "Write...", now);
+    answer(&mut app, "Ship it", now);
+    assert_eq!(shown(&app).as_deref(), Some("Hello, Ada!\n\nShip it"));
+    app.handle(Event::MessageDoubleClick, now);
+    assert_eq!(draft(&app), Some("Ship it"));
+}
+
+#[test]
+fn a_message_with_nothing_to_draw_is_not_shown() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = launch(&directory, Settings::default());
+    choose(&mut app, "Write...", now);
+    answer(&mut app, "🎯", now);
+    assert_eq!(shown(&app), None);
+    assert!(app.scene().balloon.is_none());
 }
 
 #[test]
@@ -953,6 +1089,39 @@ fn plugins_build_on_what_other_programs_wrote() {
 }
 
 #[test]
+fn the_calendar_outlives_reloading_the_plugin_that_reads_it() {
+    let directory = TempDir::new().unwrap();
+    let build = |plugins| {
+        App::builder()
+            .plugin::<Diary>()
+            .plugin::<Tally>()
+            .build(enabling(plugins), Storage::new(directory.path()))
+    };
+    assert!(!build(&["Tally"]).reads_calendar());
+    let mut app = build(&["Diary", "Tally"]);
+    assert!(app.reads_calendar());
+    app.place(CLIPPY, SCREEN);
+    let (mut app, now) = start(app);
+    let standup = Appointment {
+        id: "standup".to_owned(),
+        calendar: "Work".to_owned(),
+        title: "Standup".to_owned(),
+        start: date(2026, 10, 19).at(10, 0, 0, 0),
+        end: date(2026, 10, 19).at(10, 15, 0, 0),
+        all_day: false,
+    };
+    app.handle(Event::Calendar(Agenda::Read(vec![standup])), now);
+    for _ in 0..2 {
+        choose(&mut app, "Standup", now);
+    }
+    assert_eq!(submenu(&app, "Diary"), [("Standup".to_owned(), true)]);
+    let diary: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(directory.path().join("Diary.json")).unwrap())
+            .unwrap();
+    assert_eq!(diary["opened"], 2);
+}
+
+#[test]
 fn quitting_waits_for_goodbye() {
     let directory = TempDir::new().unwrap();
     let (mut app, now) = launch(&directory, Settings::default());
@@ -1267,6 +1436,67 @@ fn snoozing_brings_back_the_message_underneath() {
 }
 
 #[test]
+fn a_notice_shortcut_hides_the_notice_and_does_nothing_else() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(9, 59);
+    let (mut app, now) = with_chores(&directory, &day);
+    assert!(!app.shortcuts(now).contains(&ERASE));
+    let now = settle(&mut app, now, noticed);
+    assert!(app.shortcuts(now).contains(&ERASE));
+    app.handle(Event::Shortcut(ERASE), now);
+    assert_eq!(notice(&app), None);
+    assert!(!app.shortcuts(now).contains(&ERASE));
+    choose(&mut app, "Write...", now);
+    answer(&mut app, "Ship it", now);
+    let now = settle(&mut app, now, noticed);
+    assert_eq!(now, day.at(10, 15));
+    app.handle(Event::Shortcut(ERASE), now);
+    assert_eq!(notice(&app), None);
+    assert_eq!(shown(&app).as_deref(), Some("Ship it"));
+    assert!(!celebrates(&app));
+    app.handle(Event::Shortcut(ERASE), now);
+    assert_eq!(shown(&app), None);
+}
+
+#[test]
+fn ticking_a_box_that_does_not_celebrate_just_closes_the_notice() {
+    let directory = TempDir::new().unwrap();
+    let mut app = App::builder()
+        .plugin::<Meeting>()
+        .build(enabling(&["Meeting"]), Storage::new(directory.path()));
+    app.place(CLIPPY, SCREEN);
+    let (mut app, now) = start(app);
+    let now = settle(&mut app, now, |app| app.notices.is_displayed());
+    app.handle(Event::CheckboxPress, now);
+    app.handle(Event::CheckboxRelease { inside: true }, now);
+    assert!(!celebrates(&app));
+    assert!(!app.notices.is_displayed());
+    assert_eq!(shown(&app).as_deref(), Some("Busy"));
+}
+
+#[test]
+fn a_message_shortcut_hides_that_message_and_nothing_else() {
+    let directory = TempDir::new().unwrap();
+    let mut app = App::builder().plugin::<Note>().plugin::<Meeting>().build(
+        enabling(&["Note", "Meeting"]),
+        Storage::new(directory.path()),
+    );
+    app.place(CLIPPY, SCREEN);
+    let (mut app, now) = start(app);
+    let now = settle(&mut app, now, |app| app.notices.is_displayed());
+    assert!(!app.shortcuts(now).contains(&ERASE));
+    app.handle(Event::MessageDoubleClick, now);
+    choose(&mut app, "Write...", now);
+    answer(&mut app, "Ship it", now);
+    assert_eq!(shown(&app).as_deref(), Some("Ship it\n\nBusy"));
+    assert!(app.shortcuts(now).contains(&ERASE));
+    app.handle(Event::Shortcut(ERASE), now);
+    assert_eq!(shown(&app).as_deref(), Some("Ship it"));
+    app.handle(Event::Shortcut(ERASE), now);
+    assert_eq!(shown(&app), None);
+}
+
+#[test]
 fn snoozing_brings_back_the_unfinished_answer() {
     let directory = TempDir::new().unwrap();
     let day = Day::starting_at(9, 59);
@@ -1360,6 +1590,29 @@ fn a_second_reminder_waits_for_the_first() {
         notice(app) == Some((STRETCH, UNTICKED))
     });
     assert!(beckons(&app) && !celebrates(&app));
+}
+
+#[test]
+fn an_urgent_notice_takes_over_and_the_other_comes_back_after() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(10, 0);
+    let mut app = App::builder()
+        .plugin::<Chores>()
+        .plugin::<Alarm>()
+        .clock(day.clock())
+        .build(
+            enabling(&["Chores", "Alarm"]),
+            Storage::new(directory.path()),
+        );
+    app.place(CLIPPY, SCREEN);
+    app.handle(Event::Launch, day.origin);
+    let now = settle(&mut app, day.origin, noticed);
+    assert_eq!(notice(&app), Some((STRETCH, UNTICKED)));
+    let now = settle(&mut app, now, |app| notice(app).is_none());
+    assert_eq!(now, day.at(10, 5));
+    assert!(beckons(&app));
+    app.handle(Event::MessageDoubleClick, now);
+    assert_eq!(notice(&app), Some((STRETCH, UNTICKED)));
 }
 
 #[test]

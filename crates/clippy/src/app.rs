@@ -12,10 +12,11 @@ use jiff::{Timestamp, Zoned};
 
 use crate::animation::Animation;
 use crate::balloon::{Content, Edit, Layout, Placement, Prompt, SCREEN_MARGIN};
+use crate::calendar::Agenda;
 use crate::character::{Character, FieldState, Presence, Side};
 use crate::geometry::{Rect, Size};
 use crate::menu::Entry;
-use crate::plugin::{Due, PluginItem, Plugins};
+use crate::plugin::{Due, PluginItem, Plugins, Urgency};
 use crate::scene::{BalloonScene, Field, Scene};
 use crate::settings::Settings;
 use crate::shortcut::Shortcut;
@@ -35,6 +36,7 @@ pub enum Event {
     Command(Command),
     Shortcut(Shortcut),
     FullScreen(bool),
+    Calendar(Agenda),
     PointerEnter,
     PointerLeave,
     ClippyDoubleClick,
@@ -118,6 +120,10 @@ impl App {
         &self.settings
     }
 
+    pub fn reads_calendar(&self) -> bool {
+        self.plugins.reads_calendar()
+    }
+
     pub fn clippy_size(&self) -> Size {
         Character::size().scaled(self.scale())
     }
@@ -135,7 +141,17 @@ impl App {
 
     pub fn shortcuts(&self, now: Instant) -> Vec<Shortcut> {
         let mut shortcuts = vec![self.settings.toggle_shortcut];
-        for shortcut in self.plugins.active_shortcuts(self.local(now)) {
+        let local = self.local(now);
+        let notice = self.notices.shortcut();
+        let messages = self
+            .plugins
+            .message_shortcuts(local)
+            .filter(|_| self.shows_messages());
+        for shortcut in notice
+            .into_iter()
+            .chain(messages)
+            .chain(self.plugins.active_shortcuts(local))
+        {
             if !shortcuts.contains(&shortcut) {
                 shortcuts.push(shortcut);
             }
@@ -161,9 +177,14 @@ impl App {
             self.character.rouse();
         }
         let questions = self.plugins.questions_asked();
+        let dismissing =
+            matches!(event, Event::Shortcut(shortcut) if self.notices.shortcut() == Some(shortcut));
         let interrupted = event.interrupts_notices() && self.interrupt_notices(moment);
         let swallowed = match event {
             Event::MessageDoubleClick => interrupted,
+            Event::Shortcut(shortcut) => {
+                dismissing || (!interrupted && self.press_message(shortcut, moment))
+            }
             _ => event.reaches_the_field() && self.notices.is_displayed(),
         };
         if !swallowed {
@@ -198,7 +219,7 @@ impl App {
 
     pub fn scene(&self) -> Scene {
         let scale = self.scale();
-        let message = self.plugins.message();
+        let message = self.message();
         let balloon =
             self.balloon(message.as_deref())
                 .and_then(|content| self.arrange(content))
@@ -258,6 +279,7 @@ impl App {
                 let hides = full_screen && self.settings.hide_in_full_screen;
                 self.visibility.set_full_screen(hides);
             }
+            Event::Calendar(agenda) => self.plugins.read_agenda(&agenda),
             Event::PointerEnter => self.character.set_hovered(true, now),
             Event::PointerLeave => self.character.set_hovered(false, now),
             Event::ClippyDoubleClick if self.is_present() => self.show_off(),
@@ -269,7 +291,9 @@ impl App {
             Event::CheckboxRelease { inside } => {
                 if let Some(due) = self.notices.release(inside) {
                     self.plugins.check(&due, &mut self.character, moment);
-                    self.character.celebrate();
+                    if due.notice.celebrates {
+                        self.character.celebrate();
+                    }
                 }
             }
             Event::Focus => self.focused = true,
@@ -311,7 +335,7 @@ impl App {
     fn catch_up(&mut self, moment: Moment) {
         let now = moment.instant;
         let mut due = self.plugins.notices(moment.local);
-        self.end_finished_summons(&due);
+        self.end_finished_summons(&due, moment.local);
         if !self.character.is_showing_off() {
             self.visibility.stop_lingering();
         }
@@ -329,10 +353,12 @@ impl App {
         }
         let change = self
             .notices
-            .update(due, self.is_present(), self.is_celebrating());
+            .update(&due, self.is_present(), self.is_celebrating());
         if change.appeared {
             self.visibility.keep(self.settings.after_summons);
-            self.character.beckon(self.side_of(self.notices.content()));
+            let side = self.side_of(self.notices.content());
+            self.character
+                .beckon(side, self.notices.urgency() == Urgency::Asked);
             self.character.advance(now);
         }
         let covered = self.notices.is_displayed();
@@ -371,6 +397,17 @@ impl App {
         }
     }
 
+    fn press_message(&mut self, shortcut: Shortcut, moment: Moment) -> bool {
+        self.shows_messages()
+            && self
+                .plugins
+                .press_message(shortcut, &mut self.character, moment)
+    }
+
+    fn shows_messages(&self) -> bool {
+        self.is_present() && !self.notices.is_displayed() && self.plugins.prompt().is_none()
+    }
+
     fn press(&mut self, shortcut: Shortcut, moment: Moment) {
         if shortcut == self.settings.toggle_shortcut {
             self.run(Command::Toggle, moment);
@@ -401,14 +438,14 @@ impl App {
         displayed
     }
 
-    fn end_finished_summons(&mut self, due: &[Due]) {
+    fn end_finished_summons(&mut self, due: &[Due], now: DateTime) {
         let Some(summons) = self.visibility.summons() else {
             return;
         };
         let lasting = self.is_celebrating()
             || match summons.lasts {
                 Lasts::WhileAsking => self.plugins.asker() == Some(summons.owner),
-                Lasts::WhileShowing => self.plugins.shows_anything(summons.owner, due),
+                Lasts::WhileShowing => self.plugins.shows_anything(summons.owner, due, now),
             };
         if !lasting {
             self.visibility.end_summons();
@@ -496,6 +533,11 @@ impl App {
         }
     }
 
+    fn message(&self) -> Option<String> {
+        let (_, now) = self.time.as_ref()?;
+        self.plugins.message(now.datetime())
+    }
+
     fn local(&self, now: Instant) -> DateTime {
         (self.clock)(now).datetime()
     }
@@ -550,6 +592,7 @@ impl Event {
             self,
             Self::Launch
                 | Self::FullScreen(_)
+                | Self::Calendar(_)
                 | Self::PointerLeave
                 | Self::Focus
                 | Self::Blur

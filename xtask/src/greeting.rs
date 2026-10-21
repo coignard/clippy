@@ -25,6 +25,7 @@ use std::time::{Duration, Instant};
 use clippy::geometry::Rect;
 use clippy::graphics::Canvas;
 use clippy::{App, Context, Event, Message, NoSettings, Plugin, Scene, Settings, Storage};
+use jiff::civil::DateTime;
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 
@@ -48,7 +49,7 @@ impl Plugin for Greeting {
 
     type Settings = NoSettings;
 
-    fn message(&self) -> Option<Message<Infallible>> {
+    fn message(&self, _: &NoSettings, _: DateTime) -> Option<Message<Infallible>> {
         Some(Message::new(&self.text))
     }
 

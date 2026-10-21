@@ -198,21 +198,27 @@ impl Character {
         }
     }
 
-    pub(crate) fn beckon(&mut self, balloon: Side) {
-        let pointing = match balloon {
-            Side::Above => Animation::GestureUp,
-            Side::Below => Animation::GestureDown,
+    pub(crate) fn beckon(&mut self, balloon: Side, asked_for: bool) {
+        let (pointing, looking) = match balloon {
+            Side::Above => (Animation::GestureUp, Animation::LookUp),
+            Side::Below => (Animation::GestureDown, Animation::LookDown),
         };
-        let fresh: Vec<Animation> = [
-            pointing,
-            Animation::GetAttention,
-            Animation::Searching,
-            Animation::Knock,
-            Animation::Exclaim,
-        ]
-        .into_iter()
-        .filter(|&animation| Some(animation) != self.beckoned)
-        .collect();
+        let ways: &[Animation] = if asked_for {
+            &[pointing, looking]
+        } else {
+            &[
+                pointing,
+                Animation::GetAttention,
+                Animation::Searching,
+                Animation::Knock,
+                Animation::Exclaim,
+            ]
+        };
+        let fresh: Vec<Animation> = ways
+            .iter()
+            .copied()
+            .filter(|&animation| Some(animation) != self.beckoned)
+            .collect();
         let animation = self
             .rng
             .choice(fresh)
@@ -923,6 +929,8 @@ mod tests {
             Animation::Searching,
             Animation::Knock,
             Animation::Exclaim,
+            Animation::LookUp,
+            Animation::LookDown,
         ] {
             for steps in 0..ANIMATIONS.clip(beckon).frames.len() {
                 let (mut clippy, mut now) = present(&Settings::default());
@@ -976,7 +984,7 @@ mod tests {
         let (mut clippy, _) = present(&Settings::default());
         let mut seen = Vec::new();
         for _ in 0..10 {
-            clippy.beckon(Side::Above);
+            clippy.beckon(Side::Above, false);
             let played = clippy.queue.pop_back().unwrap();
             assert_ne!(seen.last(), Some(&played));
             seen.push(played);
@@ -1000,12 +1008,33 @@ mod tests {
         )));
         let below: Vec<Animation> = (0..10)
             .map(|_| {
-                clippy.beckon(Side::Below);
+                clippy.beckon(Side::Below, false);
                 clippy.queue.pop_back().unwrap()
             })
             .collect();
         assert!(below.contains(&Animation::GestureDown));
         assert!(!below.contains(&Animation::GestureUp));
+    }
+
+    #[test]
+    fn beckoning_at_what_was_asked_for_only_looks_or_points_at_it() {
+        let (mut clippy, _) = present(&Settings::default());
+        for (side, ways) in [
+            (Side::Above, [Animation::GestureUp, Animation::LookUp]),
+            (Side::Below, [Animation::GestureDown, Animation::LookDown]),
+        ] {
+            let played: Vec<Animation> = (0..6)
+                .map(|_| {
+                    clippy.beckon(side, true);
+                    clippy.queue.pop_back().unwrap()
+                })
+                .collect();
+            assert!(
+                played.iter().all(|played| ways.contains(played)),
+                "{played:?}"
+            );
+            assert!(ways.iter().all(|way| played.contains(way)), "{played:?}");
+        }
     }
 
     #[test]
@@ -1311,7 +1340,7 @@ mod tests {
     fn a_reminder_wakes_clippy_and_he_goes_back_to_sleep() {
         let (mut clippy, now) = sleepy();
         let now = settle(&mut clippy, now, sound_asleep);
-        clippy.beckon(Side::Above);
+        clippy.beckon(Side::Above, false);
         let now = settle_within(
             &mut clippy,
             now,
@@ -1326,7 +1355,7 @@ mod tests {
         let (mut clippy, now) = sleepy();
         let mut now = settle(&mut clippy, now, sound_asleep);
         let called = now;
-        clippy.beckon(Side::Above);
+        clippy.beckon(Side::Above, false);
         let mut pictures = Vec::new();
         while !clippy.is_performing() {
             now = clippy.deadline().unwrap();

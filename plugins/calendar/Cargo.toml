@@ -1,0 +1,23 @@
+[package]
+name = "clippy-calendar"
+description = "Reminds you of the events on your calendar"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+clippy.workspace = true
+jiff.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+clippy = { workspace = true, features = ["testing"] }
+toml.workspace = true
+
+[lints]
+workspace = true

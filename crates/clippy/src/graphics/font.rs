@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::borrow::Cow;
+
 use skrifa::bitmap::{BitmapData, BitmapGlyph, BitmapStrike, BitmapStrikes};
 use skrifa::charmap::Charmap;
 use skrifa::instance::{LocationRef, Size};
@@ -50,6 +52,30 @@ impl Font {
         })
     }
 
+    pub(crate) fn printable<'a>(&self, text: &'a str) -> Cow<'a, str> {
+        if text
+            .chars()
+            .all(|character| character == '\n' || self.has(character))
+        {
+            return Cow::Borrowed(text);
+        }
+        let lines: Vec<String> = text
+            .split('\n')
+            .filter_map(|line| {
+                if line.chars().all(|character| self.has(character)) {
+                    return Some(line.to_owned());
+                }
+                let kept: String = line
+                    .chars()
+                    .filter(|&character| self.has(character))
+                    .collect();
+                let words: Vec<&str> = kept.split_whitespace().collect();
+                (!words.is_empty()).then(|| words.join(" "))
+            })
+            .collect();
+        Cow::Owned(lines.join("\n"))
+    }
+
     pub(crate) fn width(&self, text: &str) -> i32 {
         text.chars().map(|character| self.advance(character)).sum()
     }
@@ -74,6 +100,10 @@ impl Font {
             }
             pen += self.glyph_advance(glyph);
         }
+    }
+
+    fn has(&self, character: char) -> bool {
+        self.charmap.map(character).is_some()
     }
 
     fn glyph(&self, character: char) -> GlyphId {
@@ -117,6 +147,16 @@ mod tests {
     use crate::assets::FONT;
     use crate::geometry::Size;
     use crate::graphics::{BLACK, Bitmap, Canvas};
+
+    #[test]
+    fn leaves_out_what_it_cannot_draw() {
+        assert_eq!(FONT.printable("Обед  at 13:00\nok"), "Обед  at 13:00\nok");
+        assert_eq!(
+            FONT.printable("🎉 Party 🥳 time\n\nStarts at 10:00"),
+            "Party time\n\nStarts at 10:00"
+        );
+        assert_eq!(FONT.printable("❤️\nStarts at 10:00"), "Starts at 10:00");
+    }
 
     #[test]
     fn draws_crisp_glyphs_around_the_baseline() {

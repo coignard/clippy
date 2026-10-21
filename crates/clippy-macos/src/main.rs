@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+mod calendars;
 mod clock;
 mod delegate;
 mod full_screen;
@@ -32,6 +33,7 @@ use std::io::{self, IsTerminal};
 use std::path::PathBuf;
 
 use clippy::{App, Storage};
+use clippy_calendar::Calendar;
 use clippy_focus::Focus;
 use clippy_inbox::Inbox;
 use clippy_reminders::Reminders;
@@ -53,6 +55,7 @@ fn main() {
     }
     logger.init();
     let app = App::builder()
+        .plugin::<Calendar>()
         .plugin::<Focus>()
         .plugin::<Inbox>()
         .plugin::<Reminders>()

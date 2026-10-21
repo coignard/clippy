@@ -16,7 +16,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::balloon::{Checkbox, Content};
-use crate::plugin::Due;
+use crate::plugin::{Due, Urgency};
+use crate::shortcut::Shortcut;
 
 #[derive(Default)]
 pub(super) struct Board {
@@ -41,6 +42,16 @@ impl Board {
 
     pub(super) fn is_displayed(&self) -> bool {
         self.shown.is_some() || self.ticked.is_some()
+    }
+
+    pub(super) fn shortcut(&self) -> Option<Shortcut> {
+        self.shown.as_ref()?.notice.shortcut
+    }
+
+    pub(super) fn urgency(&self) -> Urgency {
+        self.shown
+            .as_ref()
+            .map_or(Urgency::Normal, |due| due.notice.urgency)
     }
 
     pub(super) fn celebrated(&self) -> Option<&Due> {
@@ -72,7 +83,7 @@ impl Board {
         Some(due)
     }
 
-    pub(super) fn update(&mut self, due: Vec<Due>, present: bool, celebrating: bool) -> Change {
+    pub(super) fn update(&mut self, due: &[Due], present: bool, celebrating: bool) -> Change {
         if !present || !celebrating {
             self.ticked = None;
         }
@@ -80,8 +91,17 @@ impl Board {
         if present && self.ticked.is_none() {
             let kept = previous
                 .as_ref()
-                .and_then(|shown| due.iter().find(|candidate| candidate.is(shown)).cloned());
-            self.shown = kept.or_else(|| due.into_iter().next());
+                .and_then(|shown| due.iter().find(|candidate| candidate.is(shown)));
+            let pressing = due
+                .iter()
+                .find(|candidate| candidate.notice.urgency == Urgency::Pressing);
+            self.shown = match kept {
+                Some(kept) if kept.notice.urgency == Urgency::Pressing || pressing.is_none() => {
+                    Some(kept)
+                }
+                _ => pressing.or(due.first()),
+            }
+            .cloned();
         }
         let same = match (&previous, &self.shown) {
             (Some(previous), Some(shown)) => previous.is(shown),

@@ -19,6 +19,7 @@ use jiff::civil::DateTime;
 
 use crate::app::{Command, Moment};
 use crate::balloon::Prompt;
+use crate::calendar::Agenda;
 use crate::character::Character;
 use crate::menu::Entry;
 use crate::plugin::MenuItem;
@@ -86,6 +87,18 @@ impl Plugins {
                 installed.refresh(storage);
             }
             installed.begin_day(now);
+        }
+    }
+
+    pub(crate) fn reads_calendar(&self) -> bool {
+        self.installed
+            .iter()
+            .any(|installed| installed.reads_calendar())
+    }
+
+    pub(crate) fn read_agenda(&mut self, agenda: &Agenda) {
+        for installed in &mut self.installed {
+            installed.read_agenda(agenda);
         }
     }
 
@@ -166,10 +179,13 @@ impl Plugins {
             })
     }
 
-    pub(crate) fn message(&self) -> Option<String> {
-        self.installed
+    pub(crate) fn message(&self, now: DateTime) -> Option<String> {
+        let messages: Vec<String> = self
+            .installed
             .iter()
-            .find_map(|installed| installed.message())
+            .filter_map(|installed| installed.message(now))
+            .collect();
+        (!messages.is_empty()).then(|| messages.join("\n\n"))
     }
 
     pub(crate) fn notices(&self, now: DateTime) -> Vec<Due> {
@@ -205,12 +221,37 @@ impl Plugins {
         self.questions
     }
 
-    pub(crate) fn shows_anything(&self, plugin: usize, due: &[Due]) -> bool {
+    pub(crate) fn message_shortcuts(&self, now: DateTime) -> impl Iterator<Item = Shortcut> {
+        self.installed
+            .iter()
+            .filter_map(move |installed| installed.message_shortcut(now))
+    }
+
+    pub(crate) fn press_message(
+        &mut self,
+        shortcut: Shortcut,
+        character: &mut Character,
+        moment: Moment,
+    ) -> bool {
+        let Some(plugin) = self
+            .installed
+            .iter()
+            .position(|installed| installed.message_shortcut(moment.local) == Some(shortcut))
+        else {
+            return false;
+        };
+        self.act(plugin, moment, |installed| {
+            installed.double_click(character, moment.local)
+        });
+        true
+    }
+
+    pub(crate) fn shows_anything(&self, plugin: usize, due: &[Due], now: DateTime) -> bool {
         self.asker() == Some(plugin)
             || self
                 .installed
                 .get(plugin)
-                .is_some_and(|installed| installed.message().is_some())
+                .is_some_and(|installed| installed.message(now).is_some())
             || due.iter().any(|due| due.plugin == plugin)
     }
 
@@ -235,7 +276,7 @@ impl Plugins {
         let owner = self
             .installed
             .iter()
-            .position(|installed| installed.message().is_some());
+            .position(|installed| installed.answers_double_click(moment.local));
         if let Some(plugin) = owner {
             self.act(plugin, moment, |installed| {
                 installed.double_click(character, moment.local)

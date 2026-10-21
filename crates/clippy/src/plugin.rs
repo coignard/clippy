@@ -23,6 +23,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Animation;
+use crate::calendar::Agenda;
 use crate::character::Character;
 use crate::shortcut::Shortcut;
 
@@ -33,17 +34,21 @@ pub(crate) use plugins::{Due, Plugins};
 pub trait Plugin: Default + Serialize + DeserializeOwned + 'static {
     const NAME: &'static str;
 
+    const READS_CALENDAR: bool = false;
+
     type Action;
 
     type Settings: Default + Serialize + DeserializeOwned;
 
     fn begin_day(&mut self, _settings: &Self::Settings, _now: DateTime) {}
 
+    fn read_agenda(&mut self, _agenda: &Agenda) {}
+
     fn menu(&self, _settings: &Self::Settings, _now: DateTime) -> Vec<MenuItem<Self::Action>> {
         Vec::new()
     }
 
-    fn message(&self) -> Option<Message<Self::Action>> {
+    fn message(&self, _settings: &Self::Settings, _now: DateTime) -> Option<Message<Self::Action>> {
         None
     }
 
@@ -138,6 +143,7 @@ impl<A> MenuItem<A> {
 pub struct Message<A> {
     text: String,
     on_double_click: Option<A>,
+    shortcut: Option<Shortcut>,
 }
 
 impl<A> Message<A> {
@@ -145,6 +151,7 @@ impl<A> Message<A> {
         Self {
             text: text.into(),
             on_double_click: None,
+            shortcut: None,
         }
     }
 
@@ -152,6 +159,14 @@ impl<A> Message<A> {
     pub fn on_double_click(self, action: A) -> Self {
         Self {
             on_double_click: Some(action),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn shortcut(self, shortcut: Shortcut) -> Self {
+        Self {
+            shortcut: Some(shortcut),
             ..self
         }
     }
@@ -164,6 +179,17 @@ pub struct Notice<A> {
     on_snooze: A,
     checkbox: Option<(String, A)>,
     over_full_screen: bool,
+    shortcut: Option<Shortcut>,
+    urgency: Urgency,
+    celebrates: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Urgency {
+    Asked,
+    #[default]
+    Normal,
+    Pressing,
 }
 
 impl<A> Notice<A> {
@@ -174,6 +200,9 @@ impl<A> Notice<A> {
             on_snooze,
             checkbox: None,
             over_full_screen: false,
+            shortcut: None,
+            urgency: Urgency::Normal,
+            celebrates: true,
         }
     }
 
@@ -191,6 +220,24 @@ impl<A> Notice<A> {
             over_full_screen,
             ..self
         }
+    }
+
+    #[must_use]
+    pub fn shortcut(self, shortcut: Shortcut) -> Self {
+        Self {
+            shortcut: Some(shortcut),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn urgency(self, urgency: Urgency) -> Self {
+        Self { urgency, ..self }
+    }
+
+    #[must_use]
+    pub fn celebrates(self, celebrates: bool) -> Self {
+        Self { celebrates, ..self }
     }
 }
 

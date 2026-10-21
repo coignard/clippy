@@ -12,10 +12,12 @@ publish.workspace = true
 [dependencies]
 block2.workspace = true
 clippy.workspace = true
+clippy-calendar.workspace = true
 clippy-focus.workspace = true
 clippy-inbox.workspace = true
 clippy-reminders.workspace = true
 clippy-sleepy.workspace = true
+dispatch2.workspace = true
 env_logger.workspace = true
 global-hotkey.workspace = true
 jiff.workspace = true
@@ -63,18 +65,35 @@ objc2-core-graphics = { workspace = true, features = [
     "CGImage",
     "CGWindow",
 ] }
+objc2-event-kit = { workspace = true, features = [
+    "std",
+    "bitflags",
+    "block2",
+    "EKCalendar",
+    "EKCalendarItem",
+    "EKEvent",
+    "EKEventStore",
+    "EKObject",
+    "EKParticipant",
+    "EKTypes",
+] }
 objc2-foundation = { workspace = true, features = [
     "std",
+    "block2",
     "NSArray",
     "NSAttributedString",
+    "NSBundle",
+    "NSCalendar",
     "NSData",
     "NSDate",
     "NSEnumerator",
+    "NSError",
     "NSFileManager",
     "NSGeometry",
     "NSNotification",
     "NSObjCRuntime",
     "NSObject",
+    "NSOperation",
     "NSPathUtilities",
     "NSRange",
     "NSRunLoop",

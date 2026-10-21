@@ -81,7 +81,7 @@ impl Plugin for Focus {
         ]
     }
 
-    fn message(&self) -> Option<Message<Action>> {
+    fn message(&self, _settings: &Settings, _now: DateTime) -> Option<Message<Action>> {
         let current = self.current.as_ref()?;
         Some(Message::new(current).on_double_click(Action::Edit))
     }

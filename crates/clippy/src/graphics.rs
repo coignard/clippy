@@ -21,6 +21,9 @@ mod image;
 mod nine_slice;
 mod paletted_image;
 
+use std::borrow::Cow;
+
+use crate::assets::FONT;
 use crate::geometry::Size;
 
 pub use canvas::Canvas;
@@ -35,6 +38,10 @@ pub(crate) const TRANSPARENT: Color = [0, 0, 0, 0];
 pub(crate) const BLACK: Color = [0, 0, 0, 255];
 pub(crate) const WHITE: Color = [255, 255, 255, 255];
 pub(crate) const NAVY: Color = [0, 0, 128, 255];
+
+pub fn printable(text: &str) -> Cow<'_, str> {
+    FONT.printable(text)
+}
 
 pub(crate) trait Bitmap {
     fn pixel(&self, x: i32, y: i32) -> Color;

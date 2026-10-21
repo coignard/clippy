@@ -19,8 +19,11 @@ use std::mem;
 
 use jiff::civil::DateTime;
 
+use crate::assets::FONT;
+use crate::calendar::Agenda;
 use crate::character::Character;
-use crate::plugin::{Context, MenuItem, Notice, Plugin};
+use crate::plugin::{Context, MenuItem, Notice, Plugin, Urgency};
+use crate::shortcut::Shortcut;
 use crate::storage::{Storage, StorageError};
 
 pub(crate) struct Asked {
@@ -34,6 +37,9 @@ pub(crate) struct Noticed {
     pub(crate) text: String,
     pub(crate) checkbox: Option<String>,
     pub(crate) over_full_screen: bool,
+    pub(crate) shortcut: Option<Shortcut>,
+    pub(crate) urgency: Urgency,
+    pub(crate) celebrates: bool,
 }
 
 pub(crate) trait AnyPlugin {
@@ -41,9 +47,17 @@ pub(crate) trait AnyPlugin {
 
     fn begin_day(&mut self, now: DateTime);
 
+    fn reads_calendar(&self) -> bool;
+
+    fn read_agenda(&mut self, agenda: &Agenda);
+
     fn menu(&self, now: DateTime) -> Vec<MenuItem<()>>;
 
-    fn message(&self) -> Option<String>;
+    fn message(&self, now: DateTime) -> Option<String>;
+
+    fn answers_double_click(&self, now: DateTime) -> bool;
+
+    fn message_shortcut(&self, now: DateTime) -> Option<Shortcut>;
 
     fn notices(&self, now: DateTime) -> Vec<Noticed>;
 
@@ -78,6 +92,7 @@ pub(crate) trait AnyPlugin {
 pub(crate) struct Installed<P: Plugin> {
     plugin: P,
     settings: P::Settings,
+    agenda: Agenda,
     on_answer: Option<Box<dyn FnOnce(String) -> P::Action>>,
     unsaved: bool,
 }
@@ -87,6 +102,7 @@ impl<P: Plugin> Installed<P> {
         Self {
             plugin,
             settings,
+            agenda: Agenda::default(),
             on_answer: None,
             unsaved: false,
         }
@@ -145,6 +161,17 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
         self.unsaved = true;
     }
 
+    fn reads_calendar(&self) -> bool {
+        P::READS_CALENDAR
+    }
+
+    fn read_agenda(&mut self, agenda: &Agenda) {
+        if P::READS_CALENDAR {
+            self.agenda = agenda.clone();
+            self.plugin.read_agenda(agenda);
+        }
+    }
+
     fn menu(&self, now: DateTime) -> Vec<MenuItem<()>> {
         self.plugin
             .menu(&self.settings, now)
@@ -158,8 +185,24 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
             .collect()
     }
 
-    fn message(&self) -> Option<String> {
-        self.plugin.message().map(|message| message.text)
+    fn message(&self, now: DateTime) -> Option<String> {
+        self.plugin
+            .message(&self.settings, now)
+            .map(|message| FONT.printable(&message.text).into_owned())
+            .filter(|text| !text.is_empty())
+    }
+
+    fn answers_double_click(&self, now: DateTime) -> bool {
+        self.message(now).is_some()
+            && self
+                .plugin
+                .message(&self.settings, now)
+                .is_some_and(|message| message.on_double_click.is_some())
+    }
+
+    fn message_shortcut(&self, now: DateTime) -> Option<Shortcut> {
+        self.message(now)?;
+        self.plugin.message(&self.settings, now)?.shortcut
     }
 
     fn notices(&self, now: DateTime) -> Vec<Noticed> {
@@ -168,9 +211,14 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
             .into_iter()
             .map(|notice| Noticed {
                 id: notice.id,
-                text: notice.text,
-                checkbox: notice.checkbox.map(|(label, _)| label),
+                text: FONT.printable(&notice.text).into_owned(),
+                checkbox: notice
+                    .checkbox
+                    .map(|(label, _)| FONT.printable(&label).into_owned()),
                 over_full_screen: notice.over_full_screen,
+                shortcut: notice.shortcut,
+                urgency: notice.urgency,
+                celebrates: notice.celebrates,
             })
             .collect()
     }
@@ -200,7 +248,7 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
     }
 
     fn double_click(&mut self, character: &mut Character, now: DateTime) -> Option<Asked> {
-        let action = self.plugin.message()?.on_double_click?;
+        let action = self.plugin.message(&self.settings, now)?.on_double_click?;
         self.perform(action, character, now)
     }
 
@@ -233,7 +281,12 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
             return;
         }
         match storage.load(P::NAME) {
-            Ok(plugin) => self.plugin = plugin.unwrap_or_default(),
+            Ok(plugin) => {
+                self.plugin = plugin.unwrap_or_default();
+                if P::READS_CALENDAR {
+                    self.plugin.read_agenda(&self.agenda);
+                }
+            }
             Err(error) => log::warn!("Keeping {} as it was: {error}", P::NAME),
         }
     }

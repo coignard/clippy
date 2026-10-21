@@ -3,9 +3,10 @@ use std::time::Instant;
 
 use clippy::{App, Command, Effect, Event};
 use objc2::rc::Retained;
+use objc2::runtime::AnyObject;
 use objc2::runtime::ProtocolObject;
 use objc2::runtime::Sel;
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSApplication, NSApplicationDelegate, NSApplicationTerminateReply, NSMenu, NSMenuItem, NSPanel,
     NSWindowDelegate, NSWorkspace, NSWorkspaceActiveSpaceDidChangeNotification,
@@ -17,6 +18,7 @@ use objc2_foundation::{
     NSSystemTimeZoneDidChangeNotification, NSTimer,
 };
 
+use crate::calendars::Calendars;
 use crate::clock;
 use crate::full_screen::{self, Display};
 use crate::hotkeys::HotKeys;
@@ -43,6 +45,7 @@ struct Launched {
     stage: Stage,
     sounds: Sounds,
     hot_keys: Option<RefCell<HotKeys>>,
+    calendars: Option<Calendars>,
     timer: Retained<NSTimer>,
 }
 
@@ -141,6 +144,7 @@ define_class!(
         fn clock_did_change(&self, _notification: &NSNotification) {
             clock::forget_time_zone();
             self.send(Event::Tick);
+            self.read_calendars();
         }
 
         #[unsafe(method(perform:))]
@@ -170,6 +174,23 @@ impl Delegate {
         unsafe { msg_send![super(this), init] }
     }
 
+    pub(crate) fn shared(mtm: MainThreadMarker) -> Option<Retained<Self>> {
+        let delegate = NSApplication::sharedApplication(mtm).delegate()?;
+        let object: &AnyObject = delegate.as_ref();
+        object.downcast_ref::<Self>().map(Message::retain)
+    }
+
+    pub(crate) fn read_calendars(&self) {
+        let agenda = self
+            .ivars()
+            .launched
+            .get()
+            .and_then(|launched| launched.calendars.as_ref()?.agenda(&clock::now()));
+        if let Some(agenda) = agenda {
+            self.send(Event::Calendar(agenda));
+        }
+    }
+
     pub(crate) fn send(&self, event: Event) {
         self.ivars().app.borrow_mut().handle(event, Instant::now());
         self.sync();
@@ -187,6 +208,7 @@ impl Delegate {
     }
 
     pub(crate) fn menu(&self) -> Retained<NSMenu> {
+        self.read_calendars();
         let entries = self.ivars().app.borrow().menu(Instant::now());
         let (menu, commands) = menu::build(&entries, self);
         self.ivars().commands.replace(commands);
@@ -214,14 +236,29 @@ impl Delegate {
                 .inspect_err(|error| log::error!("Global shortcuts are unavailable: {error}"))
                 .ok()
                 .map(RefCell::new),
+            calendars: self
+                .ivars()
+                .app
+                .borrow()
+                .reads_calendar()
+                .then(Calendars::new),
             timer,
         });
+        if let Some(calendars) = self
+            .ivars()
+            .launched
+            .get()
+            .and_then(|launched| launched.calendars.as_ref())
+        {
+            calendars.watch();
+        }
         self.watch_the_clock();
         if self.watches_full_screen() {
             self.watch_full_screen();
             self.check_full_screen();
         }
         self.send(Event::Launch);
+        self.read_calendars();
     }
 
     fn watches_full_screen(&self) -> bool {
