@@ -13,14 +13,17 @@ publish = false
 
 [workspace.dependencies]
 clippy = { path = "crates/clippy" }
+clippy-calendar = { path = "plugins/calendar" }
 clippy-focus = { path = "plugins/focus" }
 clippy-inbox = { path = "plugins/inbox" }
 clippy-reminders = { path = "plugins/reminders" }
 clippy-sleepy = { path = "plugins/sleepy" }
 
 bitflags = "2.13"
+block2 = "0.6"
 cargo_metadata = "0.23"
 clap = { version = "4.6", features = ["derive"] }
+dispatch2 = "0.3"
 enum-map = "3.1"
 env_logger = { version = "0.11", default-features = false, features = ["auto-color"] }
 fastrand = "2.5"
@@ -33,6 +36,7 @@ objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false }
 objc2-core-foundation = { version = "0.3", default-features = false }
 objc2-core-graphics = { version = "0.3", default-features = false }
+objc2-event-kit = { version = "0.3", default-features = false }
 objc2-foundation = { version = "0.3", default-features = false }
 objc2-quartz-core = { version = "0.3", default-features = false }
 plist = "1.10"
