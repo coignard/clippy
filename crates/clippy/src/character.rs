@@ -34,7 +34,7 @@ pub(crate) enum Presence {
 
 pub(crate) struct Character {
     state: State,
-    queue: VecDeque<Animation>,
+    queue: VecDeque<Act>,
     departure: Option<Departure>,
     pointer: Pointer,
     field: FieldState,
@@ -82,6 +82,12 @@ struct Idleness {
     round: Vec<Animation>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Act {
+    animation: Animation,
+    whole: bool,
+}
+
 #[derive(Default)]
 enum State {
     #[default]
@@ -93,7 +99,7 @@ enum State {
     },
     Performing {
         playback: Playback<'static>,
-        wrap_up_at: Instant,
+        wrap_up_at: Option<Instant>,
     },
     Idling(Playback<'static>),
     Attentive(Glance),
@@ -191,8 +197,15 @@ impl Character {
     }
 
     pub(crate) fn play(&mut self, animation: Animation) {
+        self.perform(Act {
+            animation,
+            whole: false,
+        });
+    }
+
+    fn perform(&mut self, act: Act) {
         if matches!(self.presence(), Presence::Arriving | Presence::Present) {
-            self.queue.push_back(animation);
+            self.queue.push_back(act);
             self.disturb();
             self.wrap_up_idling();
         }
@@ -224,7 +237,10 @@ impl Character {
             .choice(fresh)
             .expect("Clippy should know more than one way to beckon");
         self.beckoned = Some(animation);
-        self.play(animation);
+        self.perform(Act {
+            animation,
+            whole: true,
+        });
     }
 
     pub(crate) fn celebrate(&mut self) {
@@ -240,7 +256,7 @@ impl Character {
             State::Performing { playback, .. } => playback.plays(ANIMATIONS.clip(animation)),
             _ => false,
         };
-        performing || self.queue.contains(&animation)
+        performing || self.queue.iter().any(|act| act.animation == animation)
     }
 
     pub(crate) fn animate(&mut self) {
@@ -321,7 +337,7 @@ impl Character {
         }
         if let State::Performing {
             playback,
-            wrap_up_at,
+            wrap_up_at: Some(wrap_up_at),
         } = &mut self.state
             && now >= *wrap_up_at
         {
@@ -382,7 +398,7 @@ impl Character {
                 playback,
                 wrap_up_at,
             } => {
-                let wrap_up = (!playback.is_exiting()).then_some(*wrap_up_at);
+                let wrap_up = wrap_up_at.filter(|_| !playback.is_exiting());
                 playback.deadline().into_iter().chain(wrap_up).min()
             }
             State::Arriving(playback) | State::Idling(playback) | State::Leaving(playback) => {
@@ -480,10 +496,18 @@ impl Character {
     fn rest(&mut self, pose: Playback<'static>, idle_at: Instant, now: Instant) -> State {
         if let Some(Departure { animation, .. }) = self.departure.take() {
             self.set_off(animation, now)
-        } else if let Some(animation) = self.queue.pop_front() {
-            State::Performing {
-                playback: self.start(animation, now),
-                wrap_up_at: now + self.animation_timeout,
+        } else if let Some(Act { animation, whole }) = self.queue.pop_front() {
+            let playback = self.start(animation, now);
+            if whole {
+                State::Performing {
+                    playback: playback.whole(),
+                    wrap_up_at: None,
+                }
+            } else {
+                State::Performing {
+                    playback,
+                    wrap_up_at: Some(now + self.animation_timeout),
+                }
             }
         } else if self.field == FieldState::Focused {
             let notepad = Notepad::take_out(now);
@@ -934,7 +958,10 @@ mod tests {
         ] {
             for steps in 0..ANIMATIONS.clip(beckon).frames.len() {
                 let (mut clippy, mut now) = present(&Settings::default());
-                clippy.play(beckon);
+                clippy.perform(Act {
+                    animation: beckon,
+                    whole: true,
+                });
                 clippy.advance(now);
                 for _ in 0..steps {
                     now = clippy.deadline().unwrap();
@@ -956,7 +983,7 @@ mod tests {
                 }
                 assert_eq!(&last.images, rest, "{beckon:?} after {steps} frames");
                 assert!(
-                    now - start <= Duration::from_millis(1400),
+                    now - start <= Duration::from_millis(1800),
                     "{beckon:?} after {steps} frames took {:?}",
                     now - start
                 );
@@ -985,7 +1012,7 @@ mod tests {
         let mut seen = Vec::new();
         for _ in 0..10 {
             clippy.beckon(Side::Above, false);
-            let played = clippy.queue.pop_back().unwrap();
+            let played = clippy.queue.pop_back().unwrap().animation;
             assert_ne!(seen.last(), Some(&played));
             seen.push(played);
         }
@@ -1009,11 +1036,36 @@ mod tests {
         let below: Vec<Animation> = (0..10)
             .map(|_| {
                 clippy.beckon(Side::Below, false);
-                clippy.queue.pop_back().unwrap()
+                clippy.queue.pop_back().unwrap().animation
             })
             .collect();
         assert!(below.contains(&Animation::GestureDown));
         assert!(!below.contains(&Animation::GestureUp));
+    }
+
+    #[test]
+    fn beckoning_plays_the_whole_animation_however_long_it_takes() {
+        let (mut clippy, mut now) = present(&Settings {
+            animation_timeout: Duration::from_secs(1),
+            ..Settings::default()
+        });
+        clippy.perform(Act {
+            animation: Animation::Searching,
+            whole: true,
+        });
+        clippy.advance(now);
+        let started = now;
+        let looking_left = &ANIMATIONS.clip(Animation::Searching).frames[32].images;
+        let mut looked_left = false;
+        while clippy.is_busy_with(Animation::Searching) {
+            now = clippy.deadline().unwrap();
+            clippy.advance(now);
+            looked_left |= clippy
+                .frame()
+                .is_some_and(|frame| &frame.images == looking_left);
+        }
+        assert!(looked_left);
+        assert!(now - started > Duration::from_secs(6));
     }
 
     #[test]
@@ -1026,7 +1078,7 @@ mod tests {
             let played: Vec<Animation> = (0..6)
                 .map(|_| {
                     clippy.beckon(side, true);
-                    clippy.queue.pop_back().unwrap()
+                    clippy.queue.pop_back().unwrap().animation
                 })
                 .collect();
             assert!(

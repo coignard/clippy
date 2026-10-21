@@ -284,6 +284,14 @@ impl Frame {
         !self.images.is_empty()
     }
 
+    pub(crate) fn always_branches(&self) -> bool {
+        self.branches
+            .iter()
+            .map(|branch| branch.weight)
+            .sum::<u32>()
+            >= 100
+    }
+
     pub(crate) fn branch(&self, rng: &mut Rng) -> Option<usize> {
         let mut roll = rng.u32(..100);
         for branch in &self.branches {

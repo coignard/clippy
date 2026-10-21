@@ -30,6 +30,7 @@ pub(crate) struct Playback<'a> {
     frame: usize,
     pace: Pace,
     vanishing: bool,
+    whole: bool,
     next_step: Option<Instant>,
 }
 
@@ -48,7 +49,16 @@ impl<'a> Playback<'a> {
             frame: 0,
             pace: Pace::Playing,
             vanishing: false,
+            whole: false,
             next_step: Some(now + clip.frames[0].duration),
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn whole(self) -> Self {
+        Self {
+            whole: true,
+            ..self
         }
     }
 
@@ -67,6 +77,7 @@ impl<'a> Playback<'a> {
             frame,
             pace: Pace::Playing,
             vanishing: false,
+            whole: false,
             next_step: Some(now + clip.frames[frame].duration),
         }
     }
@@ -177,10 +188,22 @@ impl<'a> Playback<'a> {
     fn next_frame(&self, rng: &mut Rng) -> usize {
         let frame = self.frame();
         if self.is_exiting() {
-            frame.exit.unwrap_or(self.frame + 1)
-        } else {
-            frame.branch(rng).unwrap_or(self.frame + 1)
+            return frame.exit.unwrap_or(self.frame + 1);
         }
+        let next = frame.branch(rng).unwrap_or(self.frame + 1);
+        if !self.whole || next > self.frame {
+            return next;
+        }
+        if !frame.always_branches() {
+            return self.frame + 1;
+        }
+        frame
+            .branches
+            .iter()
+            .map(|branch| branch.frame)
+            .chain(frame.exit)
+            .find(|&ahead| ahead > self.frame)
+            .unwrap_or(self.frame + 1)
     }
 
     fn last_frame(&self) -> usize {
@@ -193,7 +216,26 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::animation::{Branch, FrameImage};
+    use crate::animation::{Animation, Branch, FrameImage};
+    use crate::assets::ANIMATIONS;
+
+    #[test]
+    fn a_whole_playback_goes_through_once_without_looping_back() {
+        let clip = ANIMATIONS.clip(Animation::Searching);
+        let path: Vec<usize> = (0..=40).chain(55..=60).collect();
+        for seed in 0..50 {
+            let mut rng = Rng::with_seed(seed);
+            let mut playback = Playback::start(clip, Instant::now()).whole();
+            let mut shown = vec![playback.frame];
+            while let Some(at) = playback.deadline() {
+                playback.advance(at, &mut rng, &mut Vec::new());
+                if shown.last() != Some(&playback.frame) {
+                    shown.push(playback.frame);
+                }
+            }
+            assert_eq!(shown, path, "seed {seed}");
+        }
+    }
 
     fn frame(milliseconds: u64) -> Frame {
         Frame {
