@@ -350,7 +350,7 @@ impl Plugin for Calendar {
             .collect();
         items.push(MenuItem::label(next));
         items.push(
-            MenuItem::new("Show Today's Events", Action::ShowSummary).enabled(!today.is_empty()),
+            MenuItem::new("Show Today’s Events", Action::ShowSummary).enabled(!today.is_empty()),
         );
         let hidden = current
             .iter()

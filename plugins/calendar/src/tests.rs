@@ -251,7 +251,7 @@ fn summarises_the_rest_of_the_day_every_morning() {
     assert_eq!(harness.urgency(summary), Urgency::Normal);
     harness.snooze(summary);
     assert_eq!(harness.notices(), NOTHING);
-    harness.choose("Show Today's Events");
+    harness.choose("Show Today’s Events");
     assert_eq!(harness.notices(), [summary]);
     assert_eq!(harness.urgency(summary), Urgency::Asked);
 }
@@ -265,7 +265,7 @@ fn the_summary_can_be_turned_off_and_still_asked_for() {
         at(9, 0),
     );
     assert_eq!(harness.notices(), NOTHING);
-    harness.choose("Show Today's Events");
+    harness.choose("Show Today’s Events");
     assert_eq!(harness.notices(), ["Today on your calendar:\n13:00 Lunch"]);
     harness.set_time(at(14, 0));
     assert_eq!(harness.notices(), NOTHING);
@@ -273,7 +273,7 @@ fn the_summary_can_be_turned_off_and_still_asked_for() {
         harness.menu(),
         [
             ("Nothing Else Today".to_owned(), false),
-            ("Show Today's Events".to_owned(), false),
+            ("Show Today’s Events".to_owned(), false),
             ("Pause for an Hour".to_owned(), true),
             ("Pause Until Tomorrow".to_owned(), true),
         ]
@@ -358,7 +358,7 @@ fn pausing_holds_everything_back_until_resumed() {
             .contains(&("Paused Until Tomorrow".to_owned(), false))
     );
     assert_eq!(harness.notices(), NOTHING);
-    harness.choose("Show Today's Events");
+    harness.choose("Show Today’s Events");
     assert_eq!(
         harness.notices(),
         ["Today on your calendar:\n10:00 Standup"]
