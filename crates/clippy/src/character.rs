@@ -203,10 +203,16 @@ impl Character {
             Side::Above => Animation::GestureUp,
             Side::Below => Animation::GestureDown,
         };
-        let fresh: Vec<Animation> = [pointing, Animation::GetAttention, Animation::Searching]
-            .into_iter()
-            .filter(|&animation| Some(animation) != self.beckoned)
-            .collect();
+        let fresh: Vec<Animation> = [
+            pointing,
+            Animation::GetAttention,
+            Animation::Searching,
+            Animation::Knock,
+            Animation::Exclaim,
+        ]
+        .into_iter()
+        .filter(|&animation| Some(animation) != self.beckoned)
+        .collect();
         let animation = self
             .rng
             .choice(fresh)
@@ -915,6 +921,8 @@ mod tests {
             Animation::GestureUp,
             Animation::GestureDown,
             Animation::Searching,
+            Animation::Knock,
+            Animation::Exclaim,
         ] {
             for steps in 0..ANIMATIONS.clip(beckon).frames.len() {
                 let (mut clippy, mut now) = present(&Settings::default());
@@ -923,6 +931,9 @@ mod tests {
                 for _ in 0..steps {
                     now = clippy.deadline().unwrap();
                     clippy.advance(now);
+                }
+                if !clippy.is_busy_with(beckon) {
+                    break;
                 }
                 let mut last = clippy.frame().unwrap();
                 clippy.celebrate();
@@ -974,12 +985,18 @@ mod tests {
             Animation::GetAttention,
             Animation::GestureUp,
             Animation::Searching,
+            Animation::Knock,
+            Animation::Exclaim,
         ] {
             assert!(seen.contains(&beckon), "{beckon:?}");
         }
         assert!(seen.iter().all(|&played| matches!(
             played,
-            Animation::GetAttention | Animation::GestureUp | Animation::Searching
+            Animation::GetAttention
+                | Animation::GestureUp
+                | Animation::Searching
+                | Animation::Knock
+                | Animation::Exclaim
         )));
         let below: Vec<Animation> = (0..10)
             .map(|_| {

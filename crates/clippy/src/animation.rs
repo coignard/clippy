@@ -17,6 +17,7 @@
 
 mod playback;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -37,6 +38,8 @@ pub enum Animation {
     CheckingSomething,
     Congratulate,
     EmptyTrash,
+    #[strum(disabled)]
+    Exclaim,
     Explain,
     GestureDown,
     GestureLeft,
@@ -59,6 +62,8 @@ pub enum Animation {
     IdleRopePile,
     IdleSideToSide,
     IdleSnooze,
+    #[strum(disabled)]
+    Knock,
     LookDown,
     LookDownLeft,
     LookDownRight,
@@ -102,14 +107,16 @@ pub(crate) enum LibraryError {
 
 pub(crate) struct Library {
     frame_size: Size,
-    clips: EnumMap<Animation, &'static Clip>,
+    clips: EnumMap<Animation, Cow<'static, Clip>>,
     idles: EnumMap<IdleLevel, Vec<Animation>>,
 }
 
+#[derive(Clone)]
 pub(crate) struct Clip {
     pub(crate) frames: Vec<Frame>,
 }
 
+#[derive(Clone)]
 pub(crate) struct Frame {
     pub(crate) duration: Duration,
     pub(crate) images: Vec<FrameImage>,
@@ -159,7 +166,21 @@ impl Animation {
                 | Self::IdleRopePile
                 | Self::IdleSideToSide
                 | Self::IdleSnooze
+                | Self::Knock
+                | Self::Exclaim
         )
+    }
+
+    fn opening(self) -> Option<(Self, usize)> {
+        match self {
+            Self::Knock => Some((Self::Wave, 1)),
+            Self::Exclaim => Some((Self::Wave, 15)),
+            _ => None,
+        }
+    }
+
+    fn source(self) -> Self {
+        self.opening().map_or(self, |(source, _)| source)
     }
 
     fn named(name: &str) -> Option<Self> {
@@ -191,8 +212,9 @@ impl Library {
             .iter()
             .filter_map(|(name, clip)| Some((Animation::named(name)?, clip)))
             .collect();
-        if let Some(&missing) = Animation::VARIANTS
+        if let Some(missing) = Animation::VARIANTS
             .iter()
+            .map(|animation| animation.source())
             .find(|animation| !named.contains_key(animation))
         {
             return Err(LibraryError::Missing(missing));
@@ -203,7 +225,10 @@ impl Library {
         }
         Ok(Self {
             frame_size: character.frame_size,
-            clips: EnumMap::from_fn(|animation| named[&animation]),
+            clips: EnumMap::from_fn(|animation: Animation| match animation.opening() {
+                Some((source, frame)) => Cow::Owned(named[&source].opening_into(frame)),
+                None => Cow::Borrowed(named[&animation]),
+            }),
             idles,
         })
     }
@@ -212,8 +237,8 @@ impl Library {
         self.frame_size
     }
 
-    pub(crate) fn clip(&self, animation: Animation) -> &'static Clip {
-        self.clips[animation]
+    pub(crate) fn clip(&'static self, animation: Animation) -> &'static Clip {
+        &self.clips[animation]
     }
 
     pub(crate) fn idles(&self, level: IdleLevel) -> &[Animation] {
@@ -246,6 +271,14 @@ fn idle_state(
         .collect()
 }
 
+impl Clip {
+    fn opening_into(&self, frame: usize) -> Self {
+        let mut clip = self.clone();
+        clip.frames[0].branches = vec![Branch { frame, weight: 100 }];
+        clip
+    }
+}
+
 impl Frame {
     pub(crate) fn shows_clippy(&self) -> bool {
         !self.images.is_empty()
@@ -266,6 +299,7 @@ impl Frame {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+    use std::time::Instant;
 
     use super::*;
     use crate::assets::ANIMATIONS;
@@ -331,6 +365,25 @@ mod tests {
                 frames.iter().any(|frame| !frame.shows_clippy()),
                 "{animation:?}"
             );
+        }
+    }
+
+    #[test]
+    fn waving_splits_into_knocking_and_exclaiming() {
+        let exclamation = &ANIMATIONS.clip(Animation::Wave).frames[21].images;
+        let exclaims = |animation: Animation, seed: u64| {
+            let mut rng = Rng::with_seed(seed);
+            let mut playback = Playback::start(ANIMATIONS.clip(animation), Instant::now());
+            let mut exclaimed = false;
+            while let Some(at) = playback.deadline() {
+                playback.advance(at, &mut rng, &mut Vec::new());
+                exclaimed |= &playback.frame().images == exclamation;
+            }
+            exclaimed
+        };
+        for seed in 0..20 {
+            assert!(exclaims(Animation::Exclaim, seed), "{seed}");
+            assert!(!exclaims(Animation::Knock, seed), "{seed}");
         }
     }
 
