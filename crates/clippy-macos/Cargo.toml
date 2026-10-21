@@ -10,6 +10,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+block2.workspace = true
 clippy.workspace = true
 clippy-focus.workspace = true
 clippy-inbox.workspace = true
@@ -22,6 +23,7 @@ log.workspace = true
 objc2.workspace = true
 objc2-app-kit = { workspace = true, features = [
     "std",
+    "block2",
     "NSApplication",
     "NSColor",
     "NSCursor",

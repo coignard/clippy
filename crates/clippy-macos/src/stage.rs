@@ -115,6 +115,7 @@ impl Stage {
             }
             None => self.clippy.orderOut(None),
         }
+        self.clippy_view.follow_pointer();
         match &scene.balloon {
             Some(balloon) => self.show_balloon(balloon),
             None => self.hide_balloon(),

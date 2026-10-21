@@ -15,12 +15,16 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use clippy::Event;
+use std::cell::RefCell;
+use std::ptr::NonNull;
+
+use block2::RcBlock;
 use clippy::graphics::Canvas;
+use clippy::{Event, Hover};
 use objc2::rc::{Retained, Weak};
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
-use objc2_app_kit::{NSEvent, NSMenu, NSResponder, NSTrackingAreaOptions, NSView};
-use objc2_foundation::{NSObject, NSRect};
+use objc2_app_kit::{NSEvent, NSEventMask, NSMenu, NSResponder, NSTrackingAreaOptions, NSView};
+use objc2_foundation::{NSObject, NSPoint, NSRect};
 
 use crate::delegate::Delegate;
 use crate::view::surface::Surface;
@@ -28,6 +32,8 @@ use crate::view::surface::Surface;
 pub(crate) struct Ivars {
     delegate: Weak<Delegate>,
     surface: Surface,
+    canvas: RefCell<Option<Canvas>>,
+    hover: RefCell<Hover>,
 }
 
 define_class!(
@@ -58,12 +64,12 @@ define_class!(
 
         #[unsafe(method(mouseEntered:))]
         fn mouse_entered(&self, _event: &NSEvent) {
-            self.send(Event::PointerEnter);
+            self.follow_pointer();
         }
 
         #[unsafe(method(mouseExited:))]
         fn mouse_exited(&self, _event: &NSEvent) {
-            self.send(Event::PointerLeave);
+            self.follow_pointer();
         }
 
         #[unsafe(method_id(menuForEvent:))]
@@ -78,15 +84,67 @@ impl ClippyView {
         let this = Self::alloc(delegate.mtm()).set_ivars(Ivars {
             delegate: Weak::new(delegate),
             surface: Surface::new(),
+            canvas: RefCell::new(None),
+            hover: RefCell::default(),
         });
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: NSRect::ZERO] };
         view.ivars().surface.host_in(&view);
-        super::track(&view, NSTrackingAreaOptions::MouseEnteredAndExited);
+        super::track(
+            &view,
+            NSTrackingAreaOptions::MouseEnteredAndExited | NSTrackingAreaOptions::MouseMoved,
+        );
+        let follow = {
+            let view = Weak::from_retained(&view);
+            move || {
+                if let Some(view) = view.load() {
+                    view.follow_pointer();
+                }
+            }
+        };
+        let elsewhere = RcBlock::new({
+            let follow = follow.clone();
+            move |_| follow()
+        });
+        let here = RcBlock::new(move |event: NonNull<NSEvent>| {
+            follow();
+            event.as_ptr()
+        });
+        NSEvent::addGlobalMonitorForEventsMatchingMask_handler(NSEventMask::MouseMoved, &elsewhere);
+        unsafe {
+            NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::MouseMoved, &here)
+        };
         view
     }
 
     pub(crate) fn present(&self, canvas: &Canvas) {
         self.ivars().surface.present(canvas, self.bounds());
+        self.ivars().canvas.replace(Some(canvas.clone()));
+    }
+
+    pub(crate) fn follow_pointer(&self) {
+        let Some(window) = self.window() else {
+            return;
+        };
+        let (x, y) = self.pixel_at(self.convertPoint_fromView(
+            window.convertPointFromScreen(NSEvent::mouseLocation()),
+            None,
+        ));
+        let event = {
+            let canvas = self.ivars().canvas.borrow();
+            let canvas = canvas.as_ref().filter(|_| window.isVisible());
+            window.setIgnoresMouseEvents(!canvas.is_some_and(|canvas| canvas.is_solid(x, y)));
+            self.ivars().hover.borrow_mut().follow(canvas, x, y)
+        };
+        if let Some(event) = event {
+            self.send(event);
+        }
+    }
+
+    #[expect(clippy::cast_possible_truncation)]
+    fn pixel_at(&self, point: NSPoint) -> (i32, i32) {
+        let x = point.x.floor() as i32;
+        let y = (self.bounds().size.height - point.y).floor() as i32;
+        (x, y)
     }
 
     fn send(&self, event: Event) {

@@ -43,6 +43,10 @@ impl Canvas {
         self.pixels.as_flattened()
     }
 
+    pub fn is_solid(&self, x: i32, y: i32) -> bool {
+        self.pixel(x, y) != TRANSPARENT
+    }
+
     pub(crate) fn plot(&mut self, x: i32, y: i32, color: Color) {
         if let Some(index) = index(self.size, x, y) {
             self.pixels[index] = color;
