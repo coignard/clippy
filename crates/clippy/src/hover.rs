@@ -15,40 +15,33 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 use crate::Event;
-use crate::geometry::Rect;
 use crate::graphics::Canvas;
 
 #[derive(Debug, Default)]
 pub struct Hover {
-    footprint: Option<Canvas>,
+    entered_on: Option<Canvas>,
 }
 
 impl Hover {
     pub fn follow(&mut self, canvas: Option<&Canvas>, x: i32, y: i32) -> Option<Event> {
-        let was_hovered = self.footprint.is_some();
-        self.footprint = canvas
-            .filter(|canvas| canvas.is_solid(x, y) || self.covers(x, y))
-            .map(|canvas| {
-                let size = canvas.size();
-                let mut footprint = self
-                    .footprint
-                    .take()
-                    .filter(|footprint| footprint.size() == size)
-                    .unwrap_or_else(|| Canvas::new(size));
-                footprint.draw(canvas, Rect::new(0, 0, size.width, size.height), 0, 0);
-                footprint
-            });
-        match (was_hovered, self.footprint.is_some()) {
-            (false, true) => Some(Event::PointerEnter),
-            (true, false) => Some(Event::PointerLeave),
+        let hovered = canvas.is_some_and(|canvas| canvas.is_solid(x, y) || self.covers(x, y));
+        match (self.entered_on.is_some(), hovered) {
+            (false, true) => {
+                self.entered_on = canvas.cloned();
+                Some(Event::PointerEnter)
+            }
+            (true, false) => {
+                self.entered_on = None;
+                Some(Event::PointerLeave)
+            }
             _ => None,
         }
     }
 
     fn covers(&self, x: i32, y: i32) -> bool {
-        self.footprint
+        self.entered_on
             .as_ref()
-            .is_some_and(|footprint| footprint.is_solid(x, y))
+            .is_some_and(|entered_on| entered_on.is_solid(x, y))
     }
 }
 
@@ -81,6 +74,20 @@ mod tests {
         assert_eq!(hover.follow(Some(&frame(1, 1)), 1, 1), None);
         assert_eq!(
             hover.follow(Some(&frame(1, 0)), 2, 2),
+            Some(Event::PointerLeave)
+        );
+    }
+
+    #[test]
+    fn frames_shown_while_hovering_are_not_held_on_to() {
+        let mut hover = Hover::default();
+        assert_eq!(
+            hover.follow(Some(&frame(1, 1)), 1, 1),
+            Some(Event::PointerEnter)
+        );
+        assert_eq!(hover.follow(Some(&frame(3, 3)), 3, 3), None);
+        assert_eq!(
+            hover.follow(Some(&frame(1, 1)), 3, 3),
             Some(Event::PointerLeave)
         );
     }

@@ -132,7 +132,10 @@ impl ClippyView {
         let event = {
             let canvas = self.ivars().canvas.borrow();
             let canvas = canvas.as_ref().filter(|_| window.isVisible());
-            window.setIgnoresMouseEvents(!canvas.is_some_and(|canvas| canvas.is_solid(x, y)));
+            let ignores = !canvas.is_some_and(|canvas| canvas.is_solid(x, y));
+            if window.ignoresMouseEvents() != ignores {
+                window.setIgnoresMouseEvents(ignores);
+            }
             self.ivars().hover.borrow_mut().follow(canvas, x, y)
         };
         if let Some(event) = event {
