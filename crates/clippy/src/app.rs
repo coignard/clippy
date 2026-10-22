@@ -143,12 +143,14 @@ impl App {
         let mut shortcuts = vec![self.settings.toggle_shortcut];
         let local = self.local(now);
         let notice = self.notices.shortcut();
+        let check = self.notices.check_shortcut();
         let messages = self
             .plugins
             .message_shortcuts(local)
             .filter(|_| self.shows_messages());
         for shortcut in notice
             .into_iter()
+            .chain(check)
             .chain(messages)
             .chain(self.plugins.active_shortcuts(local))
         {
@@ -177,9 +179,11 @@ impl App {
             self.character.rouse();
         }
         let questions = self.plugins.questions_asked();
-        let dismissing =
-            matches!(event, Event::Shortcut(shortcut) if self.notices.shortcut() == Some(shortcut));
-        let interrupted = event.interrupts_notices() && self.interrupt_notices(moment);
+        let checking = matches!(event, Event::Shortcut(shortcut) if self.notices.check_shortcut() == Some(shortcut));
+        let dismissing = checking
+            || matches!(event, Event::Shortcut(shortcut) if self.notices.shortcut() == Some(shortcut));
+        let ticked = checking && self.tick_notice(moment);
+        let interrupted = !ticked && event.interrupts_notices() && self.interrupt_notices(moment);
         let swallowed = match event {
             Event::MessageDoubleClick => interrupted,
             Event::Shortcut(shortcut) => {
@@ -290,10 +294,7 @@ impl App {
             Event::CheckboxDrag { inside } => self.notices.drag(inside),
             Event::CheckboxRelease { inside } => {
                 if let Some(due) = self.notices.release(inside) {
-                    self.plugins.check(&due, &mut self.character, moment);
-                    if due.notice.celebrates {
-                        self.character.celebrate();
-                    }
+                    self.check(&due, moment);
                 }
             }
             Event::Focus => self.focused = true,
@@ -428,6 +429,21 @@ impl App {
             self.plugins.snooze(&due, &mut self.character, moment);
         }
         self.visibility.hide();
+    }
+
+    fn tick_notice(&mut self, moment: Moment) -> bool {
+        let Some(due) = self.notices.tick() else {
+            return false;
+        };
+        self.check(&due, moment);
+        true
+    }
+
+    fn check(&mut self, due: &Due, moment: Moment) {
+        self.plugins.check(due, &mut self.character, moment);
+        if due.notice.celebrates {
+            self.character.celebrate();
+        }
     }
 
     fn interrupt_notices(&mut self, moment: Moment) -> bool {

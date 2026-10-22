@@ -48,6 +48,10 @@ impl Board {
         self.shown.as_ref()?.notice.shortcut
     }
 
+    pub(super) fn check_shortcut(&self) -> Option<Shortcut> {
+        self.shown.as_ref()?.notice.check_shortcut
+    }
+
     pub(super) fn urgency(&self) -> Urgency {
         self.shown
             .as_ref()
@@ -78,7 +82,12 @@ impl Board {
         if self.press.take().is_none() || !inside {
             return None;
         }
-        let due = self.shown.take()?;
+        self.tick()
+    }
+
+    pub(super) fn tick(&mut self) -> Option<Due> {
+        let due = self.shown.take_if(|due| due.notice.checkbox.is_some())?;
+        self.press = None;
         self.ticked = Some(due.clone());
         Some(due)
     }

@@ -79,6 +79,10 @@ fn reminds_on_time_with_a_way_out() {
         harness.shortcut(STRETCH),
         Some(Settings::default().hide_shortcut)
     );
+    assert_eq!(
+        harness.check_shortcut(STRETCH),
+        Some(Settings::default().check_shortcut)
+    );
     assert_eq!(harness.next_change(), Some(at(13, 30)));
 }
 

@@ -180,6 +180,7 @@ pub struct Notice<A> {
     checkbox: Option<(String, A)>,
     over_full_screen: bool,
     shortcut: Option<Shortcut>,
+    check_shortcut: Option<Shortcut>,
     urgency: Urgency,
     celebrates: bool,
 }
@@ -201,6 +202,7 @@ impl<A> Notice<A> {
             checkbox: None,
             over_full_screen: false,
             shortcut: None,
+            check_shortcut: None,
             urgency: Urgency::Normal,
             celebrates: true,
         }
@@ -226,6 +228,14 @@ impl<A> Notice<A> {
     pub fn shortcut(self, shortcut: Shortcut) -> Self {
         Self {
             shortcut: Some(shortcut),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn check_shortcut(self, shortcut: Shortcut) -> Self {
+        Self {
+            check_shortcut: Some(shortcut),
             ..self
         }
     }

@@ -37,6 +37,7 @@ pub struct Settings {
     pub(crate) snooze: Snoozes,
     pub(crate) show_in_full_screen: bool,
     pub(crate) hide_shortcut: Shortcut,
+    pub(crate) check_shortcut: Shortcut,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,6 +114,12 @@ impl Default for Settings {
             show_in_full_screen: true,
             hide_shortcut: Shortcut {
                 modifiers: Modifiers::COMMAND.union(Modifiers::SHIFT),
+                key: Key::Delete,
+            },
+            check_shortcut: Shortcut {
+                modifiers: Modifiers::COMMAND
+                    .union(Modifiers::OPTION)
+                    .union(Modifiers::SHIFT),
                 key: Key::Delete,
             },
         }
@@ -327,7 +334,8 @@ mod tests {
              quiet_hours = []\n\
              snooze = [\"15m\", \"30m\", \"1h\"]\n\
              show_in_full_screen = true\n\
-             hide_shortcut = \"Cmd+Shift+Delete\"\n"
+             hide_shortcut = \"Cmd+Shift+Delete\"\n\
+             check_shortcut = \"Cmd+Option+Shift+Delete\"\n"
         );
     }
 

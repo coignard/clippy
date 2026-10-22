@@ -112,6 +112,7 @@ impl Reminders {
         .checkbox(label, Action::Done { text, occurrence })
         .over_full_screen(settings.show_in_full_screen)
         .shortcut(settings.hide_shortcut)
+        .check_shortcut(settings.check_shortcut)
     }
 
     fn next_showing(

@@ -99,6 +99,10 @@ impl Harness {
         self.find(text).notice.shortcut
     }
 
+    pub fn check_shortcut(&self, text: &str) -> Option<Shortcut> {
+        self.find(text).notice.check_shortcut
+    }
+
     pub fn urgency(&self, text: &str) -> Urgency {
         self.find(text).notice.urgency
     }

@@ -37,6 +37,7 @@ pub struct Settings {
     pub(crate) ignored_calendars: Vec<String>,
     pub(crate) show_in_full_screen: bool,
     pub(crate) hide_shortcut: Shortcut,
+    pub(crate) check_shortcut: Shortcut,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,6 +74,12 @@ impl Default for Settings {
             show_in_full_screen: true,
             hide_shortcut: Shortcut {
                 modifiers: Modifiers::COMMAND.union(Modifiers::SHIFT),
+                key: Key::Delete,
+            },
+            check_shortcut: Shortcut {
+                modifiers: Modifiers::COMMAND
+                    .union(Modifiers::OPTION)
+                    .union(Modifiers::SHIFT),
                 key: Key::Delete,
             },
         }
@@ -173,7 +180,8 @@ mod tests {
              only_calendars = []\n\
              ignored_calendars = []\n\
              show_in_full_screen = true\n\
-             hide_shortcut = \"Cmd+Shift+Delete\"\n"
+             hide_shortcut = \"Cmd+Shift+Delete\"\n\
+             check_shortcut = \"Cmd+Option+Shift+Delete\"\n"
         );
         assert_eq!(read(&written), Ok(Settings::default()));
         assert_eq!(read(""), Ok(Settings::default()));

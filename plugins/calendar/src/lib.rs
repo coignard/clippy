@@ -194,6 +194,7 @@ impl Calendar {
         )
         .over_full_screen(settings.show_in_full_screen)
         .shortcut(settings.hide_shortcut)
+        .check_shortcut(settings.check_shortcut)
         .celebrates(false)
         .urgency(Urgency::Pressing);
         let repeats = now < appointment.start
@@ -233,6 +234,7 @@ impl Calendar {
         Some(
             Notice::new(SUMMARY, lines.join("\n"), Action::DismissSummary)
                 .shortcut(settings.hide_shortcut)
+                .check_shortcut(settings.check_shortcut)
                 .urgency(if asked {
                     Urgency::Asked
                 } else {

@@ -38,6 +38,7 @@ pub(crate) struct Noticed {
     pub(crate) checkbox: Option<String>,
     pub(crate) over_full_screen: bool,
     pub(crate) shortcut: Option<Shortcut>,
+    pub(crate) check_shortcut: Option<Shortcut>,
     pub(crate) urgency: Urgency,
     pub(crate) celebrates: bool,
 }
@@ -217,6 +218,7 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
                     .map(|(label, _)| FONT.printable(&label).into_owned()),
                 over_full_screen: notice.over_full_screen,
                 shortcut: notice.shortcut,
+                check_shortcut: notice.check_shortcut,
                 urgency: notice.urgency,
                 celebrates: notice.celebrates,
             })

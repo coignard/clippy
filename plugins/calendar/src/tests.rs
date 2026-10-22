@@ -83,15 +83,24 @@ fn reminds_at_every_lead_time_until_dismissed() {
 }
 
 #[test]
-fn everything_it_shows_hides_with_the_shortcut_from_the_settings() {
+fn everything_it_shows_hides_with_the_shortcuts_from_the_settings() {
     let standup = event("standup", "Standup", at(9, 3), 15);
-    let harness = calendar(r#"hide_shortcut = "Cmd+Option+H""#, vec![standup], at(9, 0));
-    let hide = Shortcut {
+    let settings = r#"
+        hide_shortcut = "Cmd+Option+H"
+        check_shortcut = "Cmd+Option+J"
+    "#;
+    let harness = calendar(settings, vec![standup], at(9, 0));
+    let shortcut = |key| Shortcut {
         modifiers: Modifiers::COMMAND.union(Modifiers::OPTION),
-        key: Key::H,
+        key,
     };
     for text in harness.notices() {
-        assert_eq!(harness.shortcut(&text), Some(hide), "{text}");
+        assert_eq!(harness.shortcut(&text), Some(shortcut(Key::H)), "{text}");
+        assert_eq!(
+            harness.check_shortcut(&text),
+            Some(shortcut(Key::J)),
+            "{text}"
+        );
     }
 }
 

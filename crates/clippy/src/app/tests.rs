@@ -30,6 +30,10 @@ const ERASE: Shortcut = Shortcut {
     modifiers: Modifiers::COMMAND,
     key: Key::F6,
 };
+const TICK: Shortcut = Shortcut {
+    modifiers: Modifiers::COMMAND,
+    key: Key::F7,
+};
 const STRETCH: &str = "Time to stretch!";
 const WATER: &str = "Have some water.";
 const DONE: &str = "Don't show me this reminder again";
@@ -163,6 +167,7 @@ impl Plugin for Chores {
                     .checkbox(DONE, ChoreAction::Done(text.to_owned()))
                     .over_full_screen(text == WATER)
                     .shortcut(ERASE)
+                    .check_shortcut(TICK)
             })
             .collect()
     }
@@ -342,7 +347,11 @@ impl Plugin for Alarm {
 
     fn notices(&self, _: &NoSettings, now: DateTime) -> Vec<Notice<()>> {
         (now.time() >= time(10, 5, 0, 0) && !self.off)
-            .then(|| Notice::new("alarm", "Leave now!", ()).urgency(Urgency::Pressing))
+            .then(|| {
+                Notice::new("alarm", "Leave now!", ())
+                    .check_shortcut(TICK)
+                    .urgency(Urgency::Pressing)
+            })
             .into_iter()
             .collect()
     }
@@ -1456,6 +1465,42 @@ fn a_notice_shortcut_hides_the_notice_and_does_nothing_else() {
     assert!(!celebrates(&app));
     app.handle(Event::Shortcut(ERASE), now);
     assert_eq!(shown(&app), None);
+}
+
+#[test]
+fn a_check_shortcut_ticks_the_box_as_a_click_would() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(9, 59);
+    let (mut app, now) = with_chores(&directory, &day);
+    assert!(!app.shortcuts(now).contains(&TICK));
+    let now = settle(&mut app, now, noticed);
+    assert!(app.shortcuts(now).contains(&TICK));
+    app.handle(Event::Shortcut(TICK), now);
+    assert_eq!(notice(&app), Some((STRETCH, TICKED)));
+    assert!(celebrates(&app));
+    assert!(!app.shortcuts(now).contains(&TICK));
+    let now = settle(&mut app, now, quiet);
+    let now = settle(&mut app, now, noticed);
+    assert_eq!(now, day.at(10, 30));
+    assert_eq!(notice(&app), Some((WATER, UNTICKED)));
+}
+
+#[test]
+fn a_check_shortcut_just_hides_a_notice_without_a_box() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(10, 4);
+    let mut app = App::builder()
+        .plugin::<Alarm>()
+        .clock(day.clock())
+        .build(enabling(&["Alarm"]), Storage::new(directory.path()));
+    app.place(CLIPPY, SCREEN);
+    app.handle(Event::Launch, day.origin);
+    let now = settle(&mut app, day.origin, |app| app.notices.is_displayed());
+    assert!(app.shortcuts(now).contains(&TICK));
+    app.handle(Event::Shortcut(TICK), now);
+    assert!(!app.notices.is_displayed());
+    assert!(!celebrates(&app));
+    assert!(!app.shortcuts(now).contains(&TICK));
 }
 
 #[test]
