@@ -27,20 +27,18 @@ use crate::balloon::{Content, Placement, Prompt};
 use crate::character::Character;
 use crate::geometry::{Rect, Size};
 use crate::graphics::{BLACK, Canvas, NAVY, WHITE};
-use crate::settings::BalloonTail;
 
 const TIP_LEANING_RIGHT: i32 = 0;
-const TIP_LEANING_LEFT: i32 = TIP.width;
 const TIP_POINTING_DOWN: i32 = 0;
 const TIP_POINTING_UP: i32 = TIP.height;
 const CLIPPYS_HEAD: RangeInclusive<i32> = 41..=73;
 
 impl Layout<'_> {
-    pub(crate) fn render(&self, placement: Placement, tail: BalloonTail) -> Canvas {
+    pub(crate) fn render(&self, placement: Placement) -> Canvas {
         let mut canvas = Canvas::new(self.size());
         let body = self.body(placement);
         BALLOON_FRAME.draw(&mut canvas, body);
-        draw_tip(&mut canvas, body, placement, tail);
+        draw_tip(&mut canvas, body, placement);
         let (left, top) = self.text_origin(placement);
         draw_lines(&mut canvas, self.content.text(), &self.lines, left, top);
         if let Content::Prompt { prompt, focused } = self.content
@@ -74,19 +72,13 @@ fn draw_lines(canvas: &mut Canvas, text: &str, lines: &[Range<usize>], left: i32
     }
 }
 
-fn draw_tip(canvas: &mut Canvas, body: Rect, placement: Placement, tail: BalloonTail) {
+fn draw_tip(canvas: &mut Canvas, body: Rect, placement: Placement) {
     let clippy = if placement.extends_left() {
         body.right() - Character::size().width
     } else {
         body.x
     };
-    let (column, x) = match tail {
-        BalloonTail::Left => (
-            TIP_LEANING_RIGHT,
-            clippy + CLIPPYS_HEAD.start() - (TIP.width - 1),
-        ),
-        BalloonTail::Right => (TIP_LEANING_LEFT, clippy + CLIPPYS_HEAD.end()),
-    };
+    let x = clippy + CLIPPYS_HEAD.start() - (TIP.width - 1);
     let (row, y) = if placement.is_above() {
         (TIP_POINTING_DOWN, body.bottom() - BORDER)
     } else {
@@ -94,7 +86,7 @@ fn draw_tip(canvas: &mut Canvas, body: Rect, placement: Placement, tail: Balloon
     };
     canvas.draw(
         &*BALLOON_TIP,
-        Rect::new(column, row, TIP.width, TIP.height),
+        Rect::new(TIP_LEANING_RIGHT, row, TIP.width, TIP.height),
         x,
         y,
     );
@@ -180,39 +172,28 @@ mod tests {
                 Placement::BottomRight,
             ),
         ];
-        for tail in [BalloonTail::Left, BalloonTail::Right] {
-            for (clippy, expected) in corners {
-                let layout = Layout::new(Content::Message("Ship the plan"));
-                let (placement, frame) = Placement::choose(clippy, layout.size(), screen);
-                assert_eq!(placement, expected);
-                let canvas = layout.render(placement, tail);
-                let height = canvas.size().height;
-                let (tip, base) = if placement.is_above() {
-                    (height - 1, height - TIP_REACH)
-                } else {
-                    (0, TIP_REACH - 1)
-                };
-                let base = opaque_columns(&canvas, base);
-                let (head, near) = match tail {
-                    BalloonTail::Left => (*CLIPPYS_HEAD.start(), base.last()),
-                    BalloonTail::Right => (*CLIPPYS_HEAD.end(), base.first()),
-                };
-                let head = clippy.x - frame.x + head;
-                assert_eq!(
-                    opaque_columns(&canvas, tip),
-                    [head],
-                    "{tail:?} {placement:?}"
-                );
-                assert_eq!(near, Some(&head), "{tail:?} {placement:?}");
-            }
+        for (clippy, expected) in corners {
+            let layout = Layout::new(Content::Message("Ship the plan"));
+            let (placement, frame) = Placement::choose(clippy, layout.size(), screen);
+            assert_eq!(placement, expected);
+            let canvas = layout.render(placement);
+            let height = canvas.size().height;
+            let (tip, base) = if placement.is_above() {
+                (height - 1, height - TIP_REACH)
+            } else {
+                (0, TIP_REACH - 1)
+            };
+            let base = opaque_columns(&canvas, base);
+            let head = clippy.x - frame.x + CLIPPYS_HEAD.start();
+            assert_eq!(opaque_columns(&canvas, tip), [head], "{placement:?}");
+            assert_eq!(base.last(), Some(&head), "{placement:?}");
         }
     }
 
     #[test]
     fn tail_opens_the_border() {
         for placement in [Placement::TopLeft, Placement::BottomRight] {
-            let canvas =
-                Layout::new(Content::Message("Hi")).render(placement, BalloonTail::default());
+            let canvas = Layout::new(Content::Message("Hi")).render(placement);
             let height = canvas.size().height;
             let (border, base) = if placement.is_above() {
                 (height - TIP_REACH - 1, height - TIP_REACH)
@@ -231,8 +212,7 @@ mod tests {
 
     #[test]
     fn corners_are_pixelated_and_transparent() {
-        let canvas =
-            Layout::new(Content::Message("Hi")).render(Placement::TopLeft, BalloonTail::default());
+        let canvas = Layout::new(Content::Message("Hi")).render(Placement::TopLeft);
         assert_eq!(canvas.pixel(0, 0), TRANSPARENT);
         assert_eq!(canvas.pixel(4, 0), BLACK);
         assert_eq!(canvas.pixel(0, 4), BLACK);
@@ -248,7 +228,7 @@ mod tests {
                 prompt: &prompt,
                 focused: true,
             };
-            let canvas = Layout::new(content).render(placement, BalloonTail::default());
+            let canvas = Layout::new(content).render(placement);
             let alphas = canvas.rgba().iter().skip(3).step_by(4);
             assert!(alphas.copied().all(|alpha| alpha == 0 || alpha == 255));
         }
@@ -276,10 +256,7 @@ mod tests {
             let field = layout
                 .field(Placement::TopLeft)
                 .expect("prompts have a field");
-            (
-                layout.render(Placement::TopLeft, BalloonTail::default()),
-                text_area(field),
-            )
+            (layout.render(Placement::TopLeft), text_area(field))
         };
         let caret_drawn = |focused| {
             let (canvas, line) = render(&caret, focused);

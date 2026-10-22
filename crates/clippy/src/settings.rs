@@ -11,7 +11,6 @@ use crate::shortcut::{Key, Modifiers, Shortcut};
 pub struct Settings {
     pub toggle_shortcut: Shortcut,
     pub scale: NonZeroU8,
-    pub balloon_tail: BalloonTail,
     pub sounds: bool,
     #[serde(rename = "idle_pause_seconds", with = "seconds_range")]
     pub idle_pause: RangeInclusive<Duration>,
@@ -24,14 +23,6 @@ pub struct Settings {
     pub after_summons: AfterSummons,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plugins: Option<Vec<String>>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum BalloonTail {
-    #[default]
-    Left,
-    Right,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,7 +41,6 @@ impl Default for Settings {
                 key: Key::Backslash,
             },
             scale: NonZeroU8::MIN,
-            balloon_tail: BalloonTail::Left,
             sounds: true,
             idle_pause: Duration::from_secs(5)..=Duration::from_secs(15),
             animation_timeout: Duration::from_secs(5),
@@ -114,7 +104,6 @@ mod tests {
             text,
             "toggle_shortcut = \"Cmd+Shift+|\"\n\
              scale = 1\n\
-             balloon_tail = \"left\"\n\
              sounds = true\n\
              idle_pause_seconds = [5, 15]\n\
              animation_timeout_seconds = 5\n\
@@ -165,13 +154,6 @@ mod tests {
         let settings: Settings = toml::from_str("after_summons = \"hide\"\n").unwrap();
         assert_eq!(settings.after_summons, AfterSummons::Hide);
         assert!(toml::from_str::<Settings>("after_summons = \"vanish\"\n").is_err());
-    }
-
-    #[test]
-    fn the_balloon_tail_can_sit_on_either_side_of_clippy() {
-        let settings: Settings = toml::from_str("balloon_tail = \"right\"\n").unwrap();
-        assert_eq!(settings.balloon_tail, BalloonTail::Right);
-        assert!(toml::from_str::<Settings>("balloon_tail = \"middle\"\n").is_err());
     }
 
     #[test]

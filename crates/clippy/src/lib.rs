@@ -47,6 +47,6 @@ pub use plugin::{
     Context, MenuItem, Message, NoSettings, Notice, Plugin, PluginItem, Question, Urgency,
 };
 pub use scene::{BalloonScene, Field, Scene};
-pub use settings::{AfterSummons, BalloonTail, Settings};
+pub use settings::{AfterSummons, Settings};
 pub use sound::Sound;
 pub use storage::{Storage, StorageError};

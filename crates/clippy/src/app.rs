@@ -229,9 +229,7 @@ impl App {
                 .and_then(|content| self.arrange(content))
                 .map(|(layout, placement, frame)| BalloonScene {
                     frame,
-                    canvas: layout
-                        .render(placement, self.settings.balloon_tail)
-                        .scaled(scale),
+                    canvas: layout.render(placement).scaled(scale),
                     field: self.plugins.prompt().zip(layout.field(placement)).map(
                         |(prompt, area)| Field {
                             frame: area.scaled(scale),
