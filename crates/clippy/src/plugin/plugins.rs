@@ -18,12 +18,12 @@
 use jiff::civil::DateTime;
 
 use crate::app::{Command, Moment};
-use crate::balloon::Prompt;
+use crate::balloon::{Checkbox, Prompt};
 use crate::calendar::Agenda;
 use crate::character::Character;
 use crate::menu::Entry;
 use crate::plugin::MenuItem;
-use crate::plugin::installed::{AnyPlugin, Asked, Noticed};
+use crate::plugin::installed::{AnyPlugin, Asked, Listed, Noticed};
 use crate::shortcut::Shortcut;
 use crate::storage::Storage;
 
@@ -40,11 +40,20 @@ pub(crate) struct Plugins {
     storage: Option<Storage>,
     asking: Option<Asking>,
     questions: usize,
+    showing: Option<Showing>,
+    checklists: usize,
 }
 
 struct Asking {
     plugin: usize,
     prompt: Prompt,
+}
+
+struct Showing {
+    plugin: usize,
+    title: String,
+    items: Vec<(String, Checkbox)>,
+    press: Option<(usize, bool)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -248,11 +257,89 @@ impl Plugins {
 
     pub(crate) fn shows_anything(&self, plugin: usize, due: &[Due], now: DateTime) -> bool {
         self.asker() == Some(plugin)
+            || self.lister() == Some(plugin)
             || self
                 .installed
                 .get(plugin)
                 .is_some_and(|installed| installed.message(now).is_some())
             || due.iter().any(|due| due.plugin == plugin)
+    }
+
+    pub(crate) fn lister(&self) -> Option<usize> {
+        self.showing.as_ref().map(|showing| showing.plugin)
+    }
+
+    pub(crate) fn checklists_shown(&self) -> usize {
+        self.checklists
+    }
+
+    pub(crate) fn checklist(&self) -> Option<(&str, &[(String, Checkbox)])> {
+        let showing = self.showing.as_ref()?;
+        Some((&showing.title, &showing.items))
+    }
+
+    pub(crate) fn refresh_checklist(&mut self, now: DateTime) {
+        let Some(showing) = &mut self.showing else {
+            return;
+        };
+        let Some(Listed { title, items }) = self.installed[showing.plugin].checklist(now) else {
+            self.showing = None;
+            return;
+        };
+        if showing.press.is_some_and(|(item, _)| item >= items.len()) {
+            showing.press = None;
+        }
+        showing.title = title;
+        showing.items = (0..)
+            .zip(items)
+            .map(|(item, (label, checked))| {
+                let pressed = showing.press == Some((item, true));
+                (label, Checkbox { checked, pressed })
+            })
+            .collect();
+    }
+
+    pub(crate) fn press_checklist(&mut self, item: usize) {
+        if let Some(showing) = &mut self.showing
+            && item < showing.items.len()
+        {
+            showing.press = Some((item, true));
+        }
+    }
+
+    pub(crate) fn drag_checklist(&mut self, inside: bool) {
+        if let Some(Showing {
+            press: Some((_, pressing)),
+            ..
+        }) = &mut self.showing
+        {
+            *pressing = inside;
+        }
+    }
+
+    pub(crate) fn release_checklist(
+        &mut self,
+        inside: bool,
+        character: &mut Character,
+        moment: Moment,
+    ) {
+        let Some(showing) = &mut self.showing else {
+            return;
+        };
+        let Some((item, _)) = showing.press.take() else {
+            return;
+        };
+        let plugin = showing.plugin;
+        if inside {
+            self.act(plugin, moment, |installed| {
+                installed.toggle(item, character, moment.local)
+            });
+        }
+        self.refresh_checklist(moment.local);
+    }
+
+    pub(crate) fn close_checklist(&mut self) {
+        self.showing = None;
     }
 
     pub(crate) fn prompt(&self) -> Option<&Prompt> {
@@ -335,7 +422,11 @@ impl Plugins {
         if let Some(storage) = &self.storage {
             installed.refresh(storage);
         }
-        let Some(Asked { question, draft }) = perform(installed.as_mut()) else {
+        let asked = perform(installed.as_mut());
+        if installed.take_checklist_toggle() {
+            self.toggle_checklist(plugin, moment.local);
+        }
+        let Some(Asked { question, draft }) = asked else {
             return;
         };
         if let Some(asking) = &mut self.asking
@@ -356,5 +447,22 @@ impl Plugins {
             prompt: Prompt::new(question, draft, moment.instant),
         });
         self.questions += 1;
+    }
+
+    fn toggle_checklist(&mut self, plugin: usize, now: DateTime) {
+        if self.lister() == Some(plugin) {
+            self.showing = None;
+            return;
+        }
+        self.showing = Some(Showing {
+            plugin,
+            title: String::new(),
+            items: Vec::new(),
+            press: None,
+        });
+        self.refresh_checklist(now);
+        if self.showing.is_some() {
+            self.checklists += 1;
+        }
     }
 }

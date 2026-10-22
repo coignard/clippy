@@ -244,6 +244,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "clippy-habits"
+version = "0.1.4"
+dependencies = [
+ "clippy",
+ "jiff",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "clippy-inbox"
 version = "0.1.4"
 dependencies = [
@@ -263,6 +273,7 @@ dependencies = [
  "clippy",
  "clippy-calendar",
  "clippy-focus",
+ "clippy-habits",
  "clippy-inbox",
  "clippy-reminders",
  "clippy-sleepy",

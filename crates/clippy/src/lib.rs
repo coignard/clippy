@@ -44,7 +44,8 @@ pub use balloon::{Edit, Motion, Utf16Range};
 pub use character::portrait;
 pub use hover::Hover;
 pub use plugin::{
-    Context, MenuItem, Message, NoSettings, Notice, Plugin, PluginItem, Question, Urgency,
+    Checklist, Context, MenuItem, Message, NoSettings, Notice, Plugin, PluginItem, Question,
+    Urgency,
 };
 pub use scene::{BalloonScene, Field, Scene};
 pub use settings::{AfterSummons, Settings};

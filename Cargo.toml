@@ -15,6 +15,7 @@ publish = false
 clippy = { path = "crates/clippy" }
 clippy-calendar = { path = "plugins/calendar" }
 clippy-focus = { path = "plugins/focus" }
+clippy-habits = { path = "plugins/habits" }
 clippy-inbox = { path = "plugins/inbox" }
 clippy-reminders = { path = "plugins/reminders" }
 clippy-sleepy = { path = "plugins/sleepy" }

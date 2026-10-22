@@ -46,15 +46,11 @@ impl Layout<'_> {
         {
             draw_field(&mut canvas, area, prompt, focused);
         }
-        if let Content::Notice {
-            checkbox: Some((caption, state)),
-            ..
-        } = self.content
-            && let Some(row) = self.checkbox(placement)
-        {
+        let rows = self.content.rows().into_iter().zip(&self.labels);
+        for (((caption, state), label), row) in rows.zip(self.checkboxes(placement)) {
             controls::checkbox(&mut canvas, row.x, row.y, state);
             let left = row.x + CHECKBOX + LABEL_GAP;
-            draw_lines(&mut canvas, caption, &self.label, left, row.y);
+            draw_lines(&mut canvas, caption, label, left, row.y);
         }
         canvas
     }

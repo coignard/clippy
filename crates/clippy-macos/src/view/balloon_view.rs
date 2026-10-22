@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use clippy::geometry::Rect;
 use clippy::graphics::Canvas;
@@ -42,9 +42,9 @@ pub(crate) struct Ivars {
     delegate: Weak<Delegate>,
     surface: Surface,
     field: Cell<Option<Field>>,
-    checkbox: Cell<Option<Rect>>,
+    checkboxes: RefCell<Vec<Rect>>,
     selecting: Cell<bool>,
-    ticking: Cell<bool>,
+    ticking: Cell<Option<usize>>,
     dragging: Cell<Option<Drag>>,
     marked: Cell<Option<Utf16Range>>,
 }
@@ -197,9 +197,9 @@ define_class!(
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
             let clicks = usize::try_from(event.clickCount()).unwrap_or(1);
-            if self.on_checkbox(event) {
-                self.ivars().ticking.set(true);
-                self.send(Event::CheckboxPress);
+            if let Some(item) = self.on_checkbox(event) {
+                self.ivars().ticking.set(Some(item));
+                self.send(Event::CheckboxPress { item });
             } else if let Some(x) = self.field_x(event) {
                 self.discard_marked_text();
                 self.ivars().selecting.set(true);
@@ -225,9 +225,9 @@ define_class!(
                         (drag.origin.y + pointer.y - drag.pointer.y).round(),
                     ));
                 }
-            } else if self.ivars().ticking.get() {
+            } else if let Some(item) = self.ivars().ticking.get() {
                 self.send(Event::CheckboxDrag {
-                    inside: self.on_checkbox(event),
+                    inside: self.on_checkbox(event) == Some(item),
                 });
             } else if self.ivars().selecting.get()
                 && let Some(field) = self.field()
@@ -243,9 +243,9 @@ define_class!(
         fn mouse_up(&self, event: &NSEvent) {
             self.ivars().selecting.set(false);
             self.ivars().dragging.set(None);
-            if self.ivars().ticking.replace(false) {
+            if let Some(item) = self.ivars().ticking.take() {
                 self.send(Event::CheckboxRelease {
-                    inside: self.on_checkbox(event),
+                    inside: self.on_checkbox(event) == Some(item),
                 });
             }
         }
@@ -309,9 +309,9 @@ impl BalloonView {
             delegate: Weak::new(delegate),
             surface: Surface::new(),
             field: Cell::new(None),
-            checkbox: Cell::new(None),
+            checkboxes: RefCell::new(Vec::new()),
             selecting: Cell::new(false),
-            ticking: Cell::new(false),
+            ticking: Cell::new(None),
             dragging: Cell::new(None),
             marked: Cell::new(None),
         });
@@ -324,12 +324,12 @@ impl BalloonView {
         view
     }
 
-    pub(crate) fn present(&self, canvas: &Canvas, field: Option<Field>, checkbox: Option<Rect>) {
+    pub(crate) fn present(&self, canvas: &Canvas, field: Option<Field>, checkboxes: &[Rect]) {
         if field.is_none() {
             self.ivars().marked.set(None);
         }
         self.ivars().field.set(field);
-        self.ivars().checkbox.set(checkbox);
+        checkboxes.clone_into(&mut self.ivars().checkboxes.borrow_mut());
         self.ivars().surface.present(canvas, self.bounds());
     }
 
@@ -347,12 +347,13 @@ impl BalloonView {
         self.window()?.parentWindow()
     }
 
-    fn on_checkbox(&self, event: &NSEvent) -> bool {
+    fn on_checkbox(&self, event: &NSEvent) -> Option<usize> {
         let (x, y) = self.point(event);
         self.ivars()
-            .checkbox
-            .get()
-            .is_some_and(|checkbox| checkbox.contains(x, y))
+            .checkboxes
+            .borrow()
+            .iter()
+            .position(|checkbox| checkbox.contains(x, y))
     }
 
     #[expect(clippy::cast_possible_truncation)]

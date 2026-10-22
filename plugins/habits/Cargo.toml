@@ -1,0 +1,22 @@
+[package]
+name = "clippy-habits"
+description = "Lists the habits to tick off every day"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+clippy.workspace = true
+jiff.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+clippy = { workspace = true, features = ["testing"] }
+toml.workspace = true
+
+[lints]
+workspace = true

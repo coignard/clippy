@@ -31,6 +31,12 @@ pub(crate) struct Asked {
     pub(crate) draft: String,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Listed {
+    pub(crate) title: String,
+    pub(crate) items: Vec<(String, bool)>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Noticed {
     pub(crate) id: String,
@@ -62,6 +68,8 @@ pub(crate) trait AnyPlugin {
 
     fn notices(&self, now: DateTime) -> Vec<Noticed>;
 
+    fn checklist(&self, now: DateTime) -> Option<Listed>;
+
     fn bedtime(&self, now: DateTime) -> bool;
 
     fn changes_at(&self, now: DateTime) -> Option<DateTime>;
@@ -83,6 +91,10 @@ pub(crate) trait AnyPlugin {
 
     fn check(&mut self, id: &str, character: &mut Character, now: DateTime) -> Option<Asked>;
 
+    fn toggle(&mut self, item: usize, character: &mut Character, now: DateTime) -> Option<Asked>;
+
+    fn take_checklist_toggle(&mut self) -> bool;
+
     fn dismiss(&mut self);
 
     fn refresh(&mut self, storage: &Storage);
@@ -95,6 +107,7 @@ pub(crate) struct Installed<P: Plugin> {
     settings: P::Settings,
     agenda: Agenda,
     on_answer: Option<Box<dyn FnOnce(String) -> P::Action>>,
+    toggles_checklist: bool,
     unsaved: bool,
 }
 
@@ -105,6 +118,7 @@ impl<P: Plugin> Installed<P> {
             settings,
             agenda: Agenda::default(),
             on_answer: None,
+            toggles_checklist: false,
             unsaved: false,
         }
     }
@@ -132,10 +146,12 @@ impl<P: Plugin> Installed<P> {
         let mut cx = Context {
             character,
             question: None,
+            toggles_checklist: false,
             now,
         };
         self.plugin.perform(action, &mut cx);
         self.unsaved = true;
+        self.toggles_checklist = cx.toggles_checklist;
         let question = cx.question?;
         self.on_answer = Some(question.answer);
         Some(Asked {
@@ -225,6 +241,19 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
             .collect()
     }
 
+    fn checklist(&self, now: DateTime) -> Option<Listed> {
+        let checklist = self.plugin.checklist(&self.settings, now)?;
+        Some(Listed {
+            title: FONT.printable(&checklist.title).into_owned(),
+            items: checklist
+                .items
+                .into_iter()
+                .map(|item| (FONT.printable(&item.label).into_owned(), item.checked))
+                .collect(),
+        })
+        .filter(|listed| !listed.items.is_empty())
+    }
+
     fn bedtime(&self, now: DateTime) -> bool {
         self.plugin.bedtime(&self.settings, now)
     }
@@ -272,6 +301,20 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
     fn check(&mut self, id: &str, character: &mut Character, now: DateTime) -> Option<Asked> {
         let (_, on_check) = self.notice(id, now)?.checkbox?;
         self.perform(on_check, character, now)
+    }
+
+    fn toggle(&mut self, item: usize, character: &mut Character, now: DateTime) -> Option<Asked> {
+        let item = self
+            .plugin
+            .checklist(&self.settings, now)?
+            .items
+            .into_iter()
+            .nth(item)?;
+        self.perform(item.on_toggle, character, now)
+    }
+
+    fn take_checklist_toggle(&mut self) -> bool {
+        mem::take(&mut self.toggles_checklist)
     }
 
     fn dismiss(&mut self) {

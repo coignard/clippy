@@ -39,6 +39,10 @@ pub(crate) enum Content<'a> {
         text: &'a str,
         checkbox: Option<(&'a str, Checkbox)>,
     },
+    Checklist {
+        title: &'a str,
+        items: &'a [(String, Checkbox)],
+    },
 }
 
 impl<'a> Content<'a> {
@@ -46,6 +50,21 @@ impl<'a> Content<'a> {
         match self {
             Content::Message(text) | Content::Notice { text, .. } => text,
             Content::Prompt { prompt, .. } => prompt.question(),
+            Content::Checklist { title, .. } => title,
+        }
+    }
+
+    fn rows(self) -> Vec<(&'a str, Checkbox)> {
+        match self {
+            Content::Notice {
+                checkbox: Some(row),
+                ..
+            } => vec![row],
+            Content::Checklist { items, .. } => items
+                .iter()
+                .map(|(label, state)| (label.as_str(), *state))
+                .collect(),
+            Content::Message(_) | Content::Prompt { .. } | Content::Notice { .. } => Vec::new(),
         }
     }
 }

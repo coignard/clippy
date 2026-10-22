@@ -41,7 +41,7 @@ pub enum Event {
     PointerLeave,
     ClippyDoubleClick,
     MessageDoubleClick,
-    CheckboxPress,
+    CheckboxPress { item: usize },
     CheckboxDrag { inside: bool },
     CheckboxRelease { inside: bool },
     Focus,
@@ -179,11 +179,13 @@ impl App {
             self.character.rouse();
         }
         let questions = self.plugins.questions_asked();
+        let checklists = self.plugins.checklists_shown();
         let checking = matches!(event, Event::Shortcut(shortcut) if self.notices.check_shortcut() == Some(shortcut));
         let dismissing = checking
             || matches!(event, Event::Shortcut(shortcut) if self.notices.shortcut() == Some(shortcut));
         let ticked = checking && self.tick_notice(moment);
-        let interrupted = !ticked && event.interrupts_notices() && self.interrupt_notices(moment);
+        let puts_away = event.interrupts_notices();
+        let interrupted = !ticked && puts_away && self.interrupt_notices(moment);
         let swallowed = match event {
             Event::MessageDoubleClick => interrupted,
             Event::Shortcut(shortcut) => {
@@ -194,10 +196,18 @@ impl App {
         if !swallowed {
             self.respond(event, moment);
         }
+        if puts_away && self.plugins.checklists_shown() == checklists {
+            self.plugins.close_checklist();
+        }
         if self.plugins.questions_asked() != questions
             && let Some(asker) = self.plugins.asker()
         {
             self.visibility.summon(asker, self.settings.after_summons);
+        }
+        if self.plugins.checklists_shown() != checklists
+            && let Some(lister) = self.plugins.lister()
+        {
+            self.visibility.summon(lister, self.settings.after_summons);
         }
         self.settle(moment);
     }
@@ -237,7 +247,11 @@ impl App {
                             wants_focus: prompt.wants_focus(),
                         },
                     ),
-                    checkbox: layout.checkbox(placement).map(|area| area.scaled(scale)),
+                    checkboxes: layout
+                        .checkboxes(placement)
+                        .into_iter()
+                        .map(|area| area.scaled(scale))
+                        .collect(),
                 });
         Scene {
             clippy: self.character.render().map(|canvas| canvas.scaled(scale)),
@@ -286,14 +300,29 @@ impl App {
             Event::PointerLeave => self.character.set_hovered(false, now),
             Event::ClippyDoubleClick if self.is_present() => self.show_off(),
             Event::MessageDoubleClick if self.is_present() => {
-                self.plugins.double_click(&mut self.character, moment);
+                if self.plugins.checklist().is_some() {
+                    self.plugins.close_checklist();
+                } else {
+                    self.plugins.double_click(&mut self.character, moment);
+                }
             }
-            Event::CheckboxPress => self.notices.press(),
-            Event::CheckboxDrag { inside } => self.notices.drag(inside),
+            Event::CheckboxPress { item } => {
+                if self.notices.is_displayed() {
+                    self.notices.press();
+                } else {
+                    self.plugins.press_checklist(item);
+                }
+            }
+            Event::CheckboxDrag { inside } => {
+                self.notices.drag(inside);
+                self.plugins.drag_checklist(inside);
+            }
             Event::CheckboxRelease { inside } => {
                 if let Some(due) = self.notices.release(inside) {
                     self.check(&due, moment);
                 }
+                self.plugins
+                    .release_checklist(inside, &mut self.character, moment);
             }
             Event::Focus => self.focused = true,
             Event::Blur => self.focused = false,
@@ -349,7 +378,9 @@ impl App {
         self.character.advance(now);
         if self.character.presence() == Presence::Absent {
             self.plugins.dismiss();
+            self.plugins.close_checklist();
         }
+        self.plugins.refresh_checklist(moment.local);
         let change = self
             .notices
             .update(&due, self.is_present(), self.is_celebrating());
@@ -404,7 +435,10 @@ impl App {
     }
 
     fn shows_messages(&self) -> bool {
-        self.is_present() && !self.notices.is_displayed() && self.plugins.prompt().is_none()
+        self.is_present()
+            && !self.notices.is_displayed()
+            && self.plugins.prompt().is_none()
+            && self.plugins.checklist().is_none()
     }
 
     fn press(&mut self, shortcut: Shortcut, moment: Moment) {
@@ -458,7 +492,10 @@ impl App {
         };
         let lasting = self.is_celebrating()
             || match summons.lasts {
-                Lasts::WhileAsking => self.plugins.asker() == Some(summons.owner),
+                Lasts::WhileAsking => {
+                    self.plugins.asker() == Some(summons.owner)
+                        || self.plugins.lister() == Some(summons.owner)
+                }
                 Lasts::WhileShowing => self.plugins.shows_anything(summons.owner, due, now),
             };
         if !lasting {
@@ -505,13 +542,16 @@ impl App {
         if let Some(notice) = self.notices.content() {
             return Some(notice);
         }
-        match self.plugins.prompt() {
-            Some(prompt) => Some(Content::Prompt {
+        if let Some(prompt) = self.plugins.prompt() {
+            return Some(Content::Prompt {
                 prompt,
                 focused: self.focused,
-            }),
-            None => message.map(Content::Message),
+            });
         }
+        if let Some((title, items)) = self.plugins.checklist() {
+            return Some(Content::Checklist { title, items });
+        }
+        message.map(Content::Message)
     }
 
     fn arrange<'a>(&self, content: Content<'a>) -> Option<(Layout<'a>, Placement, Rect)> {

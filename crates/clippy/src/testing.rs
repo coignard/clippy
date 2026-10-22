@@ -147,6 +147,29 @@ impl Harness {
         self.plugins.message(self.moment.local)
     }
 
+    pub fn checklist(&mut self) -> Option<(String, Vec<(String, bool)>)> {
+        self.plugins.refresh_checklist(self.moment.local);
+        let (title, items) = self.plugins.checklist()?;
+        let items = items
+            .iter()
+            .map(|(label, state)| (label.clone(), state.checked))
+            .collect();
+        Some((title.to_owned(), items))
+    }
+
+    pub fn tick(&mut self, label: &str) {
+        let (_, items) = self
+            .checklist()
+            .expect("there should be a checklist to tick");
+        let item = items
+            .iter()
+            .position(|(item, _)| item == label)
+            .unwrap_or_else(|| panic!("the checklist should have an item {label:?}"));
+        self.plugins.press_checklist(item);
+        self.plugins
+            .release_checklist(true, &mut self.character, self.moment);
+    }
+
     pub fn question(&self) -> Option<&str> {
         self.plugins.prompt().map(Prompt::question)
     }

@@ -56,6 +56,14 @@ pub trait Plugin: Default + Serialize + DeserializeOwned + 'static {
         Vec::new()
     }
 
+    fn checklist(
+        &self,
+        _settings: &Self::Settings,
+        _now: DateTime,
+    ) -> Option<Checklist<Self::Action>> {
+        None
+    }
+
     fn bedtime(&self, _settings: &Self::Settings, _now: DateTime) -> bool {
         false
     }
@@ -70,6 +78,7 @@ pub trait Plugin: Default + Serialize + DeserializeOwned + 'static {
 pub struct Context<'a, P: Plugin> {
     character: &'a mut Character,
     question: Option<Question<P::Action>>,
+    toggles_checklist: bool,
     now: DateTime,
 }
 
@@ -80,6 +89,10 @@ impl<P: Plugin> Context<'_, P> {
 
     pub fn ask(&mut self, question: Question<P::Action>) {
         self.question = Some(question);
+    }
+
+    pub fn toggle_checklist(&mut self) {
+        self.toggles_checklist = !self.toggles_checklist;
     }
 
     pub fn play(&mut self, animation: Animation) {
@@ -248,6 +261,38 @@ impl<A> Notice<A> {
     #[must_use]
     pub fn celebrates(self, celebrates: bool) -> Self {
         Self { celebrates, ..self }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Checklist<A> {
+    title: String,
+    items: Vec<ChecklistItem<A>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ChecklistItem<A> {
+    label: String,
+    checked: bool,
+    on_toggle: A,
+}
+
+impl<A> Checklist<A> {
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            items: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn item(mut self, label: impl Into<String>, checked: bool, on_toggle: A) -> Self {
+        self.items.push(ChecklistItem {
+            label: label.into(),
+            checked,
+            on_toggle,
+        });
+        self
     }
 }
 

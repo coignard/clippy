@@ -14,7 +14,9 @@ use crate::assets::ANIMATIONS;
 use crate::balloon::{Checkbox, Motion};
 use crate::calendar::Appointment;
 use crate::character::Look;
-use crate::plugin::{Context, MenuItem, Message, NoSettings, Notice, Plugin, Question, Urgency};
+use crate::plugin::{
+    Checklist, Context, MenuItem, Message, NoSettings, Notice, Plugin, Question, Urgency,
+};
 use crate::settings::AfterSummons;
 use crate::shortcut::{Key, Modifiers};
 use crate::storage::Storage;
@@ -94,6 +96,55 @@ impl Plugin for Note {
             NoteAction::Erase => {
                 if self.text.take().is_some() {
                     cx.celebrate();
+                }
+            }
+        }
+    }
+}
+
+const PACK: Shortcut = Shortcut {
+    modifiers: Modifiers::COMMAND.union(Modifiers::SHIFT),
+    key: Key::P,
+};
+
+#[derive(Default, Serialize, Deserialize)]
+struct Packing {
+    packed: Vec<String>,
+}
+
+enum PackingAction {
+    Show,
+    Pack(&'static str),
+}
+
+impl Plugin for Packing {
+    const NAME: &'static str = "Packing";
+
+    type Action = PackingAction;
+
+    type Settings = NoSettings;
+
+    fn menu(&self, _: &NoSettings, _: DateTime) -> Vec<MenuItem<PackingAction>> {
+        vec![MenuItem::new("Pack", PackingAction::Show).shortcut(PACK)]
+    }
+
+    fn checklist(&self, _: &NoSettings, _: DateTime) -> Option<Checklist<PackingAction>> {
+        let packed = |thing: &str| self.packed.iter().any(|packed| packed == thing);
+        Some(
+            Checklist::new("Pack:")
+                .item("Socks", packed("Socks"), PackingAction::Pack("Socks"))
+                .item("Hat", packed("Hat"), PackingAction::Pack("Hat")),
+        )
+    }
+
+    fn perform(&mut self, action: PackingAction, cx: &mut Context<'_, Self>) {
+        match action {
+            PackingAction::Show => cx.toggle_checklist(),
+            PackingAction::Pack(thing) => {
+                if let Some(index) = self.packed.iter().position(|packed| packed == thing) {
+                    self.packed.remove(index);
+                } else {
+                    self.packed.push(thing.to_owned());
                 }
             }
         }
@@ -559,8 +610,27 @@ fn shown(app: &App) -> Option<String> {
     let message = app.message();
     match app.balloon(message.as_deref())? {
         Content::Message(text) => Some(text.to_owned()),
-        Content::Prompt { .. } | Content::Notice { .. } => None,
+        Content::Prompt { .. } | Content::Notice { .. } | Content::Checklist { .. } => None,
     }
+}
+
+fn listed(app: &App) -> Vec<(&str, Checkbox)> {
+    match app.balloon(None) {
+        Some(Content::Checklist { items, .. }) => items
+            .iter()
+            .map(|(label, state)| (label.as_str(), *state))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn with_packing(directory: &TempDir, settings: Settings) -> (App, Instant) {
+    fastrand::seed(7);
+    let mut app = App::builder()
+        .plugin::<Packing>()
+        .build(settings, Storage::new(directory.path()));
+    app.place(CLIPPY, SCREEN);
+    start(app)
 }
 
 fn notice(app: &App) -> Option<(&str, Checkbox)> {
@@ -1424,7 +1494,7 @@ fn reminders_tap_on_the_glass_right_on_time() {
     assert_eq!(notice(&app), Some((STRETCH, UNTICKED)));
     assert!(beckons(&app));
     let balloon = app.scene().balloon.unwrap();
-    assert!(balloon.checkbox.is_some() && balloon.field.is_none());
+    assert!(!balloon.checkboxes.is_empty() && balloon.field.is_none());
 }
 
 #[test]
@@ -1512,7 +1582,7 @@ fn ticking_a_box_that_does_not_celebrate_just_closes_the_notice() {
     app.place(CLIPPY, SCREEN);
     let (mut app, now) = start(app);
     let now = settle(&mut app, now, |app| app.notices.is_displayed());
-    app.handle(Event::CheckboxPress, now);
+    app.handle(Event::CheckboxPress { item: 0 }, now);
     app.handle(Event::CheckboxRelease { inside: true }, now);
     assert!(!celebrates(&app));
     assert!(!app.notices.is_displayed());
@@ -1573,7 +1643,7 @@ fn a_notice_hands_the_keyboard_back_only_if_it_took_it() {
     app.handle(Event::Focus, now);
     app.handle(Event::Blur, now);
     let now = settle(&mut app, now, noticed);
-    app.handle(Event::CheckboxPress, now);
+    app.handle(Event::CheckboxPress { item: 0 }, now);
     app.handle(Event::CheckboxRelease { inside: true }, now);
     settle(&mut app, now, |app| !celebrates(app));
     assert!(field(&app).is_some_and(|field| !field.wants_focus));
@@ -1628,7 +1698,7 @@ fn a_second_reminder_waits_for_the_first() {
     let later = day.at(10, 50);
     app.handle(Event::Tick, later);
     assert_eq!(notice(&app), Some((WATER, UNTICKED)));
-    app.handle(Event::CheckboxPress, later);
+    app.handle(Event::CheckboxPress { item: 0 }, later);
     app.handle(Event::CheckboxRelease { inside: true }, later);
     assert_eq!(notice(&app), Some((WATER, TICKED)));
     settle(&mut app, later, |app| {
@@ -1666,7 +1736,7 @@ fn ticking_the_box_congratulates_and_retires_the_reminder() {
     let day = Day::starting_at(9, 59);
     let (mut app, now) = with_chores(&directory, &day);
     let now = settle(&mut app, now, noticed);
-    app.handle(Event::CheckboxPress, now);
+    app.handle(Event::CheckboxPress { item: 0 }, now);
     assert_eq!(notice(&app), Some((STRETCH, PRESSED)));
     app.handle(Event::CheckboxRelease { inside: true }, now);
     assert_eq!(notice(&app), Some((STRETCH, TICKED)));
@@ -1686,7 +1756,7 @@ fn hidden_clippy_goes_back_into_hiding_right_after_the_congratulations() {
     app.handle(Event::Command(Command::Hide), now);
     let now = settle(&mut app, now, is_absent);
     let now = settle(&mut app, now, noticed);
-    app.handle(Event::CheckboxPress, now);
+    app.handle(Event::CheckboxPress { item: 0 }, now);
     app.handle(Event::CheckboxRelease { inside: true }, now);
     let done = settle(&mut app, now, quiet);
     let gone = settle(&mut app, done, is_absent);
@@ -1729,7 +1799,7 @@ fn dragging_off_the_box_takes_the_tick_back() {
     let day = Day::starting_at(9, 59);
     let (mut app, now) = with_chores(&directory, &day);
     let now = settle(&mut app, now, noticed);
-    app.handle(Event::CheckboxPress, now);
+    app.handle(Event::CheckboxPress { item: 0 }, now);
     app.handle(Event::CheckboxDrag { inside: false }, now);
     assert_eq!(notice(&app), Some((STRETCH, UNTICKED)));
     app.handle(Event::CheckboxDrag { inside: true }, now);
@@ -1746,7 +1816,7 @@ fn acting_during_the_congratulations_cuts_them_short() {
     let day = Day::starting_at(9, 59);
     let (mut app, now) = with_chores(&directory, &day);
     let now = settle(&mut app, now, noticed);
-    app.handle(Event::CheckboxPress, now);
+    app.handle(Event::CheckboxPress { item: 0 }, now);
     app.handle(Event::CheckboxRelease { inside: true }, now);
     app.handle(Event::Shortcut(WRITE), now);
     assert_eq!(notice(&app), None);
@@ -1859,6 +1929,91 @@ fn moving_clippy_turns_his_eyes_to_where_the_field_went() {
     settle(&mut app, now, |app| {
         app.character.look() == Some(Look::AtTheBalloon(Side::Above))
     });
+}
+
+#[test]
+fn a_checklist_ticks_the_box_that_was_clicked() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_packing(&directory, Settings::default());
+    app.handle(Event::Shortcut(PACK), now);
+    let balloon = app.scene().balloon.unwrap();
+    assert_eq!(balloon.checkboxes.len(), 2);
+    assert!(balloon.checkboxes[0].bottom() < balloon.checkboxes[1].y);
+    app.handle(Event::CheckboxPress { item: 1 }, now);
+    assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", PRESSED)]);
+    app.handle(Event::CheckboxRelease { inside: true }, now);
+    assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", TICKED)]);
+    app.handle(Event::CheckboxPress { item: 1 }, now);
+    app.handle(Event::CheckboxRelease { inside: true }, now);
+    assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", UNTICKED)]);
+}
+
+#[test]
+fn double_clicks_and_other_commands_put_a_checklist_away() {
+    let directory = TempDir::new().unwrap();
+    for event in [
+        Event::MessageDoubleClick,
+        Event::ClippyDoubleClick,
+        Event::Command(Command::Animate),
+    ] {
+        let (mut app, now) = with_packing(&directory, Settings::default());
+        app.handle(Event::Shortcut(PACK), now);
+        assert_eq!(listed(&app).len(), 2);
+        app.handle(event.clone(), now);
+        assert_eq!(app.plugins.checklist(), None, "{event:?}");
+        app.handle(Event::Shortcut(PACK), now);
+        assert_eq!(listed(&app).len(), 2, "{event:?}");
+    }
+}
+
+#[test]
+fn double_clicking_a_checklist_leaves_the_message_under_it_alone() {
+    let directory = TempDir::new().unwrap();
+    let mut app = App::builder()
+        .plugin::<Note>()
+        .plugin::<Packing>()
+        .build(Settings::default(), Storage::new(directory.path()));
+    app.place(CLIPPY, SCREEN);
+    let (mut app, now) = start(app);
+    choose(&mut app, "Write...", now);
+    answer(&mut app, "Ship it", now);
+    app.handle(Event::Shortcut(PACK), now);
+    app.handle(Event::MessageDoubleClick, now);
+    assert_eq!(app.plugins.prompt().map(Prompt::question), None);
+    assert_eq!(shown(&app).as_deref(), Some("Ship it"));
+}
+
+#[test]
+fn letting_go_of_a_checklist_box_elsewhere_leaves_it_alone() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_packing(&directory, Settings::default());
+    app.handle(Event::Shortcut(PACK), now);
+    app.handle(Event::CheckboxPress { item: 0 }, now);
+    app.handle(Event::CheckboxDrag { inside: false }, now);
+    assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", UNTICKED)]);
+    app.handle(Event::CheckboxRelease { inside: false }, now);
+    assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", UNTICKED)]);
+}
+
+#[test]
+fn a_checklist_summons_clippy_until_its_shortcut_puts_it_away() {
+    let directory = TempDir::new().unwrap();
+    let settings = Settings {
+        after_summons: AfterSummons::Hide,
+        ..Settings::default()
+    };
+    let (mut app, now) = with_packing(&directory, settings);
+    app.handle(Event::Command(Command::Hide), now);
+    let now = settle(&mut app, now, is_absent);
+    app.handle(Event::Shortcut(PACK), now);
+    let now = settle(&mut app, now, App::is_present);
+    assert_eq!(listed(&app).len(), 2);
+    let later = now + Duration::from_secs(60);
+    app.handle(Event::Tick, later);
+    assert!(app.is_present());
+    app.handle(Event::Shortcut(PACK), later);
+    assert_eq!(app.plugins.checklist(), None);
+    settle(&mut app, later, is_absent);
 }
 
 #[test]

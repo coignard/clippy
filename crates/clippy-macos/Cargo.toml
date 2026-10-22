@@ -14,6 +14,7 @@ block2.workspace = true
 clippy.workspace = true
 clippy-calendar.workspace = true
 clippy-focus.workspace = true
+clippy-habits.workspace = true
 clippy-inbox.workspace = true
 clippy-reminders.workspace = true
 clippy-sleepy.workspace = true

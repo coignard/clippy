@@ -39,12 +39,13 @@ const MIN_TEXT_WIDTH: i32 = 120;
 const MAX_TEXT_WIDTH: i32 = 200;
 pub(super) const LABEL_GAP: i32 = 6;
 const CONTROL_GAP: i32 = 6;
+const ROW_GAP: i32 = 4;
 const FIELD_HEIGHT: i32 = LINE_HEIGHT + 8;
 
 pub(crate) struct Layout<'a> {
     pub(super) content: Content<'a>,
     pub(super) lines: Vec<Range<usize>>,
-    pub(super) label: Vec<Range<usize>>,
+    pub(super) labels: Vec<Vec<Range<usize>>>,
     text_width: i32,
     body: Size,
 }
@@ -54,20 +55,23 @@ impl<'a> Layout<'a> {
         let text = content.text();
         let lines = wrap(text, MAX_TEXT_WIDTH);
         let longest = widest(text, &lines);
-        let mut label = Vec::new();
+        let rows = content.rows();
+        let labels: Vec<Vec<Range<usize>>> = rows
+            .iter()
+            .map(|(caption, _)| wrap(caption, MAX_TEXT_WIDTH - CHECKBOX - LABEL_GAP))
+            .collect();
         let (text_width, controls) = match content {
-            Content::Message(_) | Content::Notice { checkbox: None, .. } => {
-                (longest.clamp(MIN_TEXT_WIDTH, MAX_TEXT_WIDTH), 0)
-            }
             Content::Prompt { .. } => (MAX_TEXT_WIDTH, CONTROL_GAP + FIELD_HEIGHT),
-            Content::Notice {
-                checkbox: Some((caption, _)),
-                ..
-            } => {
-                label = wrap(caption, MAX_TEXT_WIDTH - CHECKBOX - LABEL_GAP);
-                let row = CHECKBOX + LABEL_GAP + widest(caption, &label);
+            _ if rows.is_empty() => (longest.clamp(MIN_TEXT_WIDTH, MAX_TEXT_WIDTH), 0),
+            _ => {
+                let row = rows
+                    .iter()
+                    .zip(&labels)
+                    .map(|((caption, _), label)| CHECKBOX + LABEL_GAP + widest(caption, label))
+                    .max()
+                    .unwrap_or(0);
                 let width = longest.max(row).clamp(MIN_TEXT_WIDTH, MAX_TEXT_WIDTH);
-                (width, CONTROL_GAP + height(&label).max(CHECKBOX))
+                (width, CONTROL_GAP + rows_height(&labels))
             }
         };
         let chrome = 2 * (BORDER + PADDING);
@@ -75,7 +79,7 @@ impl<'a> Layout<'a> {
             content,
             body: Size::new(text_width + chrome, height(&lines) + controls + chrome),
             lines,
-            label,
+            labels,
             text_width,
         }
     }
@@ -91,14 +95,20 @@ impl<'a> Layout<'a> {
         Some(self.controls(placement, FIELD_HEIGHT))
     }
 
-    pub(crate) fn checkbox(&self, placement: Placement) -> Option<Rect> {
-        let Content::Notice {
-            checkbox: Some(_), ..
-        } = self.content
-        else {
-            return None;
-        };
-        Some(self.controls(placement, height(&self.label).max(CHECKBOX)))
+    pub(crate) fn checkboxes(&self, placement: Placement) -> Vec<Rect> {
+        if self.labels.is_empty() {
+            return Vec::new();
+        }
+        let area = self.controls(placement, rows_height(&self.labels));
+        let mut top = area.y;
+        self.labels
+            .iter()
+            .map(|label| {
+                let row = Rect::new(area.x, top, area.width, row_height(label));
+                top += row.height + ROW_GAP;
+                row
+            })
+            .collect()
     }
 
     pub(super) fn body(&self, placement: Placement) -> Rect {
@@ -128,6 +138,15 @@ fn widest(text: &str, lines: &[Range<usize>]) -> i32 {
         .map(|line| FONT.width(&text[line.clone()]))
         .max()
         .unwrap_or(0)
+}
+
+fn row_height(label: &[Range<usize>]) -> i32 {
+    height(label).max(CHECKBOX)
+}
+
+fn rows_height(labels: &[Vec<Range<usize>>]) -> i32 {
+    let gaps = i32::try_from(labels.len().saturating_sub(1)).unwrap_or(0) * ROW_GAP;
+    labels.iter().map(|label| row_height(label)).sum::<i32>() + gaps
 }
 
 fn height(lines: &[Range<usize>]) -> i32 {

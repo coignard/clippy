@@ -35,6 +35,7 @@ use std::path::PathBuf;
 use clippy::{App, Storage};
 use clippy_calendar::Calendar;
 use clippy_focus::Focus;
+use clippy_habits::Habits;
 use clippy_inbox::Inbox;
 use clippy_reminders::Reminders;
 use clippy_sleepy::Sleepy;
@@ -57,6 +58,7 @@ fn main() {
     let app = App::builder()
         .plugin::<Calendar>()
         .plugin::<Focus>()
+        .plugin::<Habits>()
         .plugin::<Inbox>()
         .plugin::<Reminders>()
         .plugin::<Sleepy>()
