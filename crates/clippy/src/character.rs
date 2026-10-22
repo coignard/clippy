@@ -44,7 +44,6 @@ pub(crate) struct Character {
     sounds: Vec<Sound>,
     idleness: Idleness,
     bedtime: bool,
-    roused: bool,
     rng: Rng,
     idle_pause: RangeInclusive<Duration>,
     animation_timeout: Duration,
@@ -122,7 +121,6 @@ impl Character {
             sounds: Vec::new(),
             idleness: Idleness::default(),
             bedtime: false,
-            roused: false,
             rng,
             idle_pause: settings.idle_pause.clone(),
             animation_timeout: settings.animation_timeout,
@@ -303,7 +301,6 @@ impl Character {
     }
 
     pub(crate) fn rouse(&mut self) {
-        self.roused = true;
         self.disturb();
         self.wrap_up_idling();
     }
@@ -371,7 +368,6 @@ impl Character {
             State::Resting { pose, idle_at } => self.rest(pose, idle_at, now),
             state => state,
         };
-        self.roused = false;
     }
 
     pub(crate) fn deadline(&self) -> Option<Instant> {
@@ -482,8 +478,10 @@ impl Character {
             || self.wanted_look().is_some();
         match (needed, self.bedtime) {
             (false, true) => slumber::Wish::Sleep,
-            (true, _) if !self.roused => slumber::Wish::Wake(slumber::Manner::AtOnce),
-            _ => slumber::Wish::Wake(slumber::Manner::Gently),
+            _ if self.wanted_look() == Some(Look::AtThePointer) => {
+                slumber::Wish::Wake(slumber::Manner::Gently)
+            }
+            _ => slumber::Wish::Wake(slumber::Manner::AtOnce),
         }
     }
 
@@ -1313,7 +1311,7 @@ mod tests {
         }
     }
 
-    const RUBBING_AN_EYE: usize = 605;
+    const SQUINTING: usize = 612;
     const GETTING_UP: usize = 647;
 
     fn settle_within(
@@ -1371,11 +1369,12 @@ mod tests {
             clippy.advance(now);
             pictures.extend(image(&clippy));
         }
-        let rubbing = pictures
-            .iter()
-            .position(|&picture| picture == RUBBING_AN_EYE);
+        let squinting = pictures.iter().position(|&picture| picture == SQUINTING);
         let getting_up = pictures.iter().position(|&picture| picture == GETTING_UP);
-        assert!(rubbing < getting_up && rubbing.is_some(), "{pictures:?}");
+        assert!(
+            squinting < getting_up && squinting.is_some(),
+            "{pictures:?}"
+        );
         clippy.set_hovered(false, now);
         settle_within(&mut clippy, now, Duration::from_secs(10), sound_asleep);
     }
@@ -1416,7 +1415,43 @@ mod tests {
         }
         assert!(now - called <= Duration::from_secs(1), "{:?}", now - called);
         assert!(pictures.contains(&GETTING_UP), "{pictures:?}");
-        assert!(!pictures.contains(&RUBBING_AN_EYE), "{pictures:?}");
+        assert!(!pictures.contains(&SQUINTING), "{pictures:?}");
+    }
+
+    #[test]
+    fn a_trick_asked_for_wakes_clippy_at_once() {
+        let (mut clippy, now) = sleepy();
+        let mut now = settle(&mut clippy, now, sound_asleep);
+        let asked = now;
+        clippy.rouse();
+        clippy.animate();
+        let mut pictures = Vec::new();
+        while !clippy.is_performing() {
+            now = clippy.deadline().unwrap();
+            clippy.advance(now);
+            pictures.extend(image(&clippy));
+        }
+        assert!(now - asked <= Duration::from_secs(1), "{:?}", now - asked);
+        assert!(!pictures.contains(&SQUINTING), "{pictures:?}");
+    }
+
+    #[test]
+    fn a_reminder_hurries_clippy_up_while_a_pointer_wakes_him_gently() {
+        let (mut clippy, now) = sleepy();
+        let mut now = settle(&mut clippy, now, sound_asleep);
+        clippy.set_hovered(true, now);
+        while image(&clippy) != Some(SQUINTING) {
+            now = clippy.deadline().unwrap();
+            clippy.advance(now);
+        }
+        let called = now;
+        clippy.beckon(Side::Above, false);
+        clippy.advance(now);
+        while !clippy.is_performing() {
+            now = clippy.deadline().unwrap();
+            clippy.advance(now);
+        }
+        assert!(now - called <= Duration::from_secs(1), "{:?}", now - called);
     }
 
     #[test]
