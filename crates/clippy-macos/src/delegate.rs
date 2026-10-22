@@ -110,7 +110,9 @@ define_class!(
             if launched.stage.display() != self.ivars().display.get() {
                 self.check_full_screen();
             }
-            self.sync();
+            let (clippy, screen) = launched.stage.geometry();
+            self.ivars().app.borrow_mut().place(clippy, screen);
+            self.send(Event::Tick);
         }
 
         #[unsafe(method(windowDidBecomeKey:))]

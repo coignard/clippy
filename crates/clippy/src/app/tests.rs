@@ -1842,6 +1842,26 @@ fn clippy_looks_up_at_an_open_field_and_takes_notes_once_it_has_the_keyboard() {
 }
 
 #[test]
+fn moving_clippy_turns_his_eyes_to_where_the_field_went() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = launch(&directory, Settings::default());
+    choose(&mut app, "Write...", now);
+    let now = settle(&mut app, now, |app| {
+        app.character.look() == Some(Look::AtTheBalloon(Side::Above))
+    });
+    app.place(Rect::new(1300, 16, 124, 93), SCREEN);
+    app.handle(Event::Tick, now);
+    let now = settle(&mut app, now, |app| {
+        app.character.look() == Some(Look::AtTheBalloon(Side::Below))
+    });
+    app.place(CLIPPY, SCREEN);
+    app.handle(Event::Tick, now);
+    settle(&mut app, now, |app| {
+        app.character.look() == Some(Look::AtTheBalloon(Side::Above))
+    });
+}
+
+#[test]
 fn clippy_writes_along_while_you_type() {
     let directory = TempDir::new().unwrap();
     let (mut app, now) = launch(&directory, Settings::default());
