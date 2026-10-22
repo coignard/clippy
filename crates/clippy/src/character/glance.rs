@@ -73,6 +73,10 @@ impl Glance {
         }
     }
 
+    pub(super) fn skip_first_hold(&mut self, now: Instant) {
+        self.next_step = now;
+    }
+
     pub(super) fn look(&self) -> Look {
         self.look
     }

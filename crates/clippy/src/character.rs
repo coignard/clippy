@@ -457,12 +457,7 @@ impl Character {
     }
 
     fn frame(&self) -> Option<&'static Frame> {
-        match &self.state {
-            State::Attentive(glance) => Some(glance.frame()),
-            State::Notepad(notepad) => Some(notepad.frame()),
-            State::Asleep(slumber) => Some(slumber.frame()),
-            state => state.playback().map(Playback::frame),
-        }
+        self.state.frame()
     }
 
     fn wanted_look(&self) -> Option<Look> {
@@ -509,6 +504,20 @@ impl Character {
     }
 
     fn rest(&mut self, pose: Playback<'static>, idle_at: Instant, now: Instant) -> State {
+        let held = pose.is_finished().then(|| pose.frame());
+        let mut state = self.go_on(pose, idle_at, now);
+        if let Some(held) = held
+            && !matches!(state, State::Resting { .. })
+            && state
+                .frame()
+                .is_some_and(|frame| frame.images == held.images)
+        {
+            state.skip_first_hold(now);
+        }
+        state
+    }
+
+    fn go_on(&mut self, pose: Playback<'static>, idle_at: Instant, now: Instant) -> State {
         if let Some(Departure { animation, .. }) = self.departure.take() {
             self.set_off(animation, now)
         } else if let Some(Act { animation, length }) = self.queue.pop_front() {
@@ -584,6 +593,28 @@ impl Character {
 }
 
 impl State {
+    fn frame(&self) -> Option<&'static Frame> {
+        match self {
+            State::Attentive(glance) => Some(glance.frame()),
+            State::Notepad(notepad) => Some(notepad.frame()),
+            State::Asleep(slumber) => Some(slumber.frame()),
+            state => state.playback().map(Playback::frame),
+        }
+    }
+
+    fn skip_first_hold(&mut self, now: Instant) {
+        match self {
+            State::Absent | State::Resting { .. } => {}
+            State::Attentive(glance) => glance.skip_first_hold(now),
+            State::Notepad(notepad) => notepad.skip_first_hold(now),
+            State::Asleep(slumber) => slumber.skip_first_hold(now),
+            State::Arriving(playback)
+            | State::Performing { playback, .. }
+            | State::Idling(playback)
+            | State::Leaving(playback) => playback.skip_first_hold(now),
+        }
+    }
+
     fn playback(&self) -> Option<&Playback<'static>> {
         match self {
             State::Absent | State::Attentive(_) | State::Notepad(_) | State::Asleep(_) => None,
@@ -791,7 +822,7 @@ mod tests {
         let now = settle(&mut clippy, entered, |clippy| {
             holds(clippy, Look::AtThePointer, 91)
         });
-        assert_eq!(now - entered, Duration::from_millis(300));
+        assert_eq!(now - entered, Duration::from_millis(200));
         assert_eq!(clippy.deadline(), Some(entered + Duration::from_mins(1)));
         clippy.set_hovered(false, now);
         let lowered = settle(&mut clippy, now, is_resting);
@@ -1169,6 +1200,7 @@ mod tests {
             .clip(Animation::GetAttention)
             .frames
             .iter()
+            .skip(1)
             .map(|frame| frame.duration)
             .sum();
         clippy.leave(Animation::Hide, None);
@@ -1261,6 +1293,36 @@ mod tests {
             need(&mut clippy);
             clippy.advance(now);
             assert!(is_wrapping_up(&clippy), "need {i}");
+        }
+    }
+
+    #[test]
+    fn the_rest_pose_is_held_once_between_animations() {
+        let (mut clippy, mut now) = present(&Settings {
+            idle_pause: Duration::ZERO..=Duration::ZERO,
+            ..Settings::default()
+        });
+        clippy.set_field(FieldState::Open(Side::Above));
+        clippy.animate();
+        clippy.animate();
+        let mut shown = Vec::new();
+        while let Some(next) = clippy.deadline() {
+            let frame = clippy.frame().unwrap();
+            if !shown
+                .last()
+                .is_some_and(|&(last, _): &(&Frame, _)| last.images == frame.images)
+            {
+                shown.push((frame, Duration::ZERO));
+            }
+            shown.last_mut().unwrap().1 += next - now;
+            now = next;
+            clippy.advance(now);
+        }
+        let resting = &ANIMATIONS.clip(Animation::RestPose).frames[0];
+        for &(frame, held) in &shown[1..shown.len() - 1] {
+            if frame.images == resting.images {
+                assert!(held <= resting.duration, "{held:?}");
+            }
         }
     }
 
@@ -1366,13 +1428,18 @@ mod tests {
 
     #[test]
     fn a_farewell_ends_once_clippy_is_out_of_sight() {
+        let resting = &ANIMATIONS.clip(Animation::RestPose).frames[0];
         for animation in [Animation::SendMail, Animation::EmptyTrash] {
             let frames = &ANIMATIONS.clip(animation).frames;
             let vanishes = frames
                 .iter()
                 .position(|frame| !frame.shows_clippy())
                 .unwrap();
-            let gone: Duration = frames[..vanishes].iter().map(|frame| frame.duration).sum();
+            let from = usize::from(frames[0].images == resting.images);
+            let gone: Duration = frames[from..vanishes]
+                .iter()
+                .map(|frame| frame.duration)
+                .sum();
             let (mut clippy, now) = present(&Settings::default());
             clippy.leave(animation, None);
             let leaving = settle(&mut clippy, now, is_leaving);

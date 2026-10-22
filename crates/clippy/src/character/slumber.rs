@@ -83,6 +83,10 @@ impl Slumber {
         }
     }
 
+    pub(super) fn skip_first_hold(&mut self, now: Instant) {
+        self.next_step = now;
+    }
+
     pub(super) fn advance(
         &mut self,
         wish: Wish,

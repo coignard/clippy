@@ -95,6 +95,12 @@ impl<'a> Playback<'a> {
         &self.clip.frames[self.frame]
     }
 
+    pub(crate) fn skip_first_hold(&mut self, now: Instant) {
+        if self.next_step.is_some() {
+            self.next_step = Some(now);
+        }
+    }
+
     pub(crate) fn exit(&mut self) {
         if self.pace == Pace::Playing {
             self.pace = Pace::Exiting;

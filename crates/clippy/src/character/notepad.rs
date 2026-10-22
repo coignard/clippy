@@ -87,6 +87,10 @@ impl Notepad {
         }
     }
 
+    pub(super) fn skip_first_hold(&mut self, now: Instant) {
+        self.next_step = now;
+    }
+
     pub(super) fn notice_typing(&mut self, now: Instant) {
         if matches!(
             self.phase(),
