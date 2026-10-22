@@ -43,6 +43,10 @@ Clippy itself and its plugins do not depend on macOS, so on other systems leave 
 cargo test --workspace --exclude clippy-macos
 ```
 
+## Credits
+
+Thanks to Kevan Atteberry for designing the original Clippit character.
+
 ## License
 
 <img src="assets/gplv3.svg" height="70" align="right">
