@@ -394,6 +394,7 @@ impl Character {
     fn state_deadline(&self) -> Option<Instant> {
         match &self.state {
             State::Absent => None,
+            State::Resting { pose, .. } if pose.is_returning() => pose.deadline(),
             State::Resting { idle_at, .. } => Some(*idle_at),
             State::Attentive(glance) => {
                 let ignoring = match (glance.look(), self.pointer) {
@@ -503,7 +504,17 @@ impl Character {
         self.rest(pose, idle_at, now)
     }
 
-    fn rest(&mut self, pose: Playback<'static>, idle_at: Instant, now: Instant) -> State {
+    fn rest(&mut self, mut pose: Playback<'static>, idle_at: Instant, now: Instant) -> State {
+        if pose.is_finished()
+            && !pose.is_at_start()
+            && !is_at_rest(pose.frame())
+            && !self.stays_put(idle_at, now)
+        {
+            pose.return_to_start(now);
+        }
+        if pose.is_returning() {
+            return State::Resting { pose, idle_at };
+        }
         let held = pose.is_finished().then(|| pose.frame());
         let mut state = self.go_on(pose, idle_at, now);
         if let Some(held) = held
@@ -515,6 +526,15 @@ impl Character {
             state.skip_first_hold(now);
         }
         state
+    }
+
+    fn stays_put(&self, idle_at: Instant, now: Instant) -> bool {
+        self.departure.is_none()
+            && self.queue.is_empty()
+            && self.field != FieldState::Focused
+            && self.wanted_look().is_none()
+            && !self.bedtime
+            && now < idle_at
     }
 
     fn go_on(&mut self, pose: Playback<'static>, idle_at: Instant, now: Instant) -> State {
@@ -672,6 +692,10 @@ fn draw(frame: &Frame) -> Canvas {
         );
     }
     canvas
+}
+
+fn is_at_rest(frame: &Frame) -> bool {
+    frame.images == ANIMATIONS.clip(Animation::RestPose).frames[0].images
 }
 
 fn random_pause(rng: &mut Rng, range: &RangeInclusive<Duration>) -> Duration {
@@ -1324,6 +1348,45 @@ mod tests {
                 assert!(held <= resting.duration, "{held:?}");
             }
         }
+    }
+
+    #[test]
+    fn a_shifted_pose_is_kept_until_clippy_shifts_back_to_react() {
+        let (mut clippy, now) = present(&Settings {
+            idle_pause: Duration::from_hours(1)..=Duration::from_hours(1),
+            ..Settings::default()
+        });
+        clippy.perform(Act {
+            animation: Animation::IdleHeadScratch,
+            length: Length::Whole,
+        });
+        let now = settle(&mut clippy, now, is_resting);
+        let frames = &ANIMATIONS.clip(Animation::IdleHeadScratch).frames;
+        let shifted = &frames[frames.len() - 1].images;
+        let later = now + Duration::from_mins(30);
+        clippy.advance(later);
+        assert_eq!(&clippy.frame().unwrap().images, shifted);
+        clippy.set_hovered(true, later);
+        let mut shown = vec![shifted.clone()];
+        let mut now = later;
+        clippy.advance(now);
+        loop {
+            let images = &clippy.frame().unwrap().images;
+            if shown.last() != Some(images) {
+                shown.push(images.clone());
+            }
+            if looks(&clippy, Look::AtThePointer) {
+                break;
+            }
+            now = clippy.deadline().unwrap();
+            clippy.advance(now);
+        }
+        let resting = &ANIMATIONS.clip(Animation::RestPose).frames[0].images;
+        assert_eq!(
+            shown,
+            [shifted, &frames[0].images, resting].map(Clone::clone)
+        );
+        assert!(now - later <= Duration::from_millis(200));
     }
 
     #[test]

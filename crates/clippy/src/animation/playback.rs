@@ -40,6 +40,7 @@ enum Pace {
     Exiting,
     Hurrying,
     Rewinding,
+    Returning,
 }
 
 impl<'a> Playback<'a> {
@@ -101,6 +102,20 @@ impl<'a> Playback<'a> {
         }
     }
 
+    pub(crate) fn return_to_start(&mut self, now: Instant) {
+        self.pace = Pace::Returning;
+        self.frame = 0;
+        self.next_step = Some(now + self.hold(0));
+    }
+
+    pub(crate) fn is_returning(&self) -> bool {
+        self.pace == Pace::Returning && !self.is_finished()
+    }
+
+    pub(crate) fn is_at_start(&self) -> bool {
+        self.frame == 0
+    }
+
     pub(crate) fn exit(&mut self) {
         if self.pace == Pace::Playing {
             self.pace = Pace::Exiting;
@@ -156,10 +171,12 @@ impl<'a> Playback<'a> {
     }
 
     fn following(&self, rng: &mut Rng) -> Option<usize> {
-        if self.pace == Pace::Rewinding {
-            self.frame.checked_sub(1)
-        } else {
-            (self.frame != self.last_frame()).then(|| self.next_frame(rng))
+        match self.pace {
+            Pace::Returning => None,
+            Pace::Rewinding => self.frame.checked_sub(1),
+            Pace::Playing | Pace::Exiting | Pace::Hurrying => {
+                (self.frame != self.last_frame()).then(|| self.next_frame(rng))
+            }
         }
     }
 
