@@ -84,7 +84,14 @@ struct Idleness {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Act {
     animation: Animation,
-    whole: bool,
+    length: Length,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Length {
+    Limited,
+    Whole,
+    UntilNeeded,
 }
 
 #[derive(Default)]
@@ -99,6 +106,7 @@ enum State {
     Performing {
         playback: Playback<'static>,
         wrap_up_at: Option<Instant>,
+        yielding: bool,
     },
     Idling(Playback<'static>),
     Attentive(Glance),
@@ -197,7 +205,7 @@ impl Character {
     pub(crate) fn play(&mut self, animation: Animation) {
         self.perform(Act {
             animation,
-            whole: false,
+            length: Length::Limited,
         });
     }
 
@@ -206,6 +214,7 @@ impl Character {
             self.queue.push_back(act);
             self.disturb();
             self.wrap_up_idling();
+            self.make_way();
         }
     }
 
@@ -237,7 +246,7 @@ impl Character {
         self.beckoned = Some(animation);
         self.perform(Act {
             animation,
-            whole: true,
+            length: Length::Whole,
         });
     }
 
@@ -260,7 +269,10 @@ impl Character {
     pub(crate) fn animate(&mut self) {
         let trick = Animation::random_trick(&mut self.rng);
         self.trick = Some(trick);
-        self.play(trick);
+        self.perform(Act {
+            animation: trick,
+            length: Length::UntilNeeded,
+        });
     }
 
     pub(crate) fn is_showing_off(&self) -> bool {
@@ -280,6 +292,9 @@ impl Character {
     }
 
     pub(crate) fn set_field(&mut self, field: FieldState) {
+        if field == FieldState::Focused && self.field != FieldState::Focused {
+            self.make_way();
+        }
         self.field = field;
         if field != FieldState::Focused {
             self.typing_until = None;
@@ -335,6 +350,7 @@ impl Character {
         if let State::Performing {
             playback,
             wrap_up_at: Some(wrap_up_at),
+            ..
         } = &mut self.state
             && now >= *wrap_up_at
         {
@@ -393,6 +409,7 @@ impl Character {
             State::Performing {
                 playback,
                 wrap_up_at,
+                ..
             } => {
                 let wrap_up = wrap_up_at.filter(|_| !playback.is_exiting());
                 playback.deadline().into_iter().chain(wrap_up).min()
@@ -494,18 +511,19 @@ impl Character {
     fn rest(&mut self, pose: Playback<'static>, idle_at: Instant, now: Instant) -> State {
         if let Some(Departure { animation, .. }) = self.departure.take() {
             self.set_off(animation, now)
-        } else if let Some(Act { animation, whole }) = self.queue.pop_front() {
+        } else if let Some(Act { animation, length }) = self.queue.pop_front() {
             let playback = self.start(animation, now);
-            if whole {
-                State::Performing {
-                    playback: playback.whole(),
-                    wrap_up_at: None,
-                }
-            } else {
-                State::Performing {
+            match length {
+                Length::Limited => State::Performing {
                     playback,
                     wrap_up_at: Some(now + self.animation_timeout),
-                }
+                    yielding: false,
+                },
+                Length::Whole | Length::UntilNeeded => State::Performing {
+                    playback: playback.whole(),
+                    wrap_up_at: None,
+                    yielding: length == Length::UntilNeeded,
+                },
             }
         } else if self.field == FieldState::Focused {
             let notepad = Notepad::take_out(now);
@@ -549,6 +567,17 @@ impl Character {
 
     fn wrap_up_idling(&mut self) {
         if let State::Idling(playback) = &mut self.state {
+            playback.exit();
+        }
+    }
+
+    fn make_way(&mut self) {
+        if let State::Performing {
+            playback,
+            yielding: true,
+            ..
+        } = &mut self.state
+        {
             playback.exit();
         }
     }
@@ -958,7 +987,7 @@ mod tests {
                 let (mut clippy, mut now) = present(&Settings::default());
                 clippy.perform(Act {
                     animation: beckon,
-                    whole: true,
+                    length: Length::Whole,
                 });
                 clippy.advance(now);
                 for _ in 0..steps {
@@ -1049,7 +1078,7 @@ mod tests {
         });
         clippy.perform(Act {
             animation: Animation::Searching,
-            whole: true,
+            length: Length::Whole,
         });
         clippy.advance(now);
         let started = now;
@@ -1192,6 +1221,47 @@ mod tests {
         assert_eq!(clippy.deadline(), Some(by).min(clippy.state_deadline()));
         let leaving = settle(&mut clippy, started, is_leaving);
         assert!(leaving <= by);
+    }
+
+    #[test]
+    fn tricks_asked_for_play_to_the_end_however_long_they_take() {
+        for field in [
+            FieldState::Closed,
+            FieldState::Open(Side::Above),
+            FieldState::Focused,
+        ] {
+            let (mut clippy, mut now) = present(&Settings {
+                animation_timeout: Duration::from_secs(1),
+                ..Settings::default()
+            });
+            clippy.set_field(field);
+            for _ in 0..20 {
+                clippy.animate();
+                now = settle(&mut clippy, now, Character::is_performing);
+                while clippy.is_showing_off() {
+                    assert!(!is_wrapping_up(&clippy), "{field:?}, {:?}", clippy.trick);
+                    now = clippy.deadline().unwrap();
+                    clippy.advance(now);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_trick_wraps_up_once_clippy_is_needed() {
+        let needs: [fn(&mut Character); 3] = [
+            |clippy| clippy.beckon(Side::Above, false),
+            |clippy| clippy.set_field(FieldState::Focused),
+            Character::animate,
+        ];
+        for (i, need) in needs.into_iter().enumerate() {
+            let (mut clippy, now) = present(&Settings::default());
+            clippy.animate();
+            let now = settle(&mut clippy, now, Character::is_performing);
+            need(&mut clippy);
+            clippy.advance(now);
+            assert!(is_wrapping_up(&clippy), "need {i}");
+        }
     }
 
     #[test]
