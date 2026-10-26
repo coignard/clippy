@@ -28,7 +28,6 @@ use crate::character::Character;
 use crate::geometry::{Rect, Size};
 use crate::graphics::{BLACK, Canvas, NAVY, WHITE};
 
-const TIP_LEANING_RIGHT: i32 = 0;
 const TIP_POINTING_DOWN: i32 = 0;
 const TIP_POINTING_UP: i32 = TIP.height;
 const CLIPPYS_HEAD: RangeInclusive<i32> = 41..=73;
@@ -82,7 +81,7 @@ fn draw_tip(canvas: &mut Canvas, body: Rect, placement: Placement) {
     };
     canvas.draw(
         &*BALLOON_TIP,
-        Rect::new(TIP_LEANING_RIGHT, row, TIP.width, TIP.height),
+        Rect::new(0, row, TIP.width, TIP.height),
         x,
         y,
     );
@@ -147,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn tail_points_at_the_chosen_side_of_clippys_head() {
+    fn tail_points_at_clippys_head() {
         let screen = Rect::new(0, 0, 1000, 800);
         let clippy = Character::size();
         let corners = [
