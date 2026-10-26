@@ -41,6 +41,7 @@ use crate::view::surface::Surface;
 pub(crate) struct Ivars {
     delegate: Weak<Delegate>,
     surface: Surface,
+    canvas: RefCell<Option<Canvas>>,
     field: Cell<Option<Field>>,
     checkboxes: RefCell<Vec<Rect>>,
     selecting: Cell<bool>,
@@ -248,6 +249,7 @@ define_class!(
                     inside: self.on_checkbox(event) == Some(item),
                 });
             }
+            self.follow_pointer();
         }
 
         #[unsafe(method(mouseMoved:))]
@@ -308,6 +310,7 @@ impl BalloonView {
         let this = Self::alloc(delegate.mtm()).set_ivars(Ivars {
             delegate: Weak::new(delegate),
             surface: Surface::new(),
+            canvas: RefCell::new(None),
             field: Cell::new(None),
             checkboxes: RefCell::new(Vec::new()),
             selecting: Cell::new(false),
@@ -321,6 +324,7 @@ impl BalloonView {
             &view,
             NSTrackingAreaOptions::MouseEnteredAndExited | NSTrackingAreaOptions::MouseMoved,
         );
+        super::watch_pointer(&view, Self::follow_pointer);
         view
     }
 
@@ -331,6 +335,27 @@ impl BalloonView {
         self.ivars().field.set(field);
         checkboxes.clone_into(&mut self.ivars().checkboxes.borrow_mut());
         self.ivars().surface.present(canvas, self.bounds());
+        self.ivars().canvas.replace(Some(canvas.clone()));
+    }
+
+    pub(crate) fn follow_pointer(&self) {
+        let Some(window) = self.window() else {
+            return;
+        };
+        if self.is_pressed() {
+            return;
+        }
+        let (x, y) = super::pointer(self, &window);
+        let canvas = self.ivars().canvas.borrow();
+        super::catch_clicks(
+            &window,
+            canvas.as_ref().is_some_and(|canvas| canvas.is_solid(x, y)),
+        );
+    }
+
+    fn is_pressed(&self) -> bool {
+        let ivars = self.ivars();
+        ivars.selecting.get() || ivars.ticking.get().is_some() || ivars.dragging.get().is_some()
     }
 
     fn field(&self) -> Option<Field> {

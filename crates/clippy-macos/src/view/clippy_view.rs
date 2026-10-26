@@ -16,15 +16,13 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::cell::RefCell;
-use std::ptr::NonNull;
 
-use block2::RcBlock;
 use clippy::graphics::Canvas;
 use clippy::{Event, Hover};
 use objc2::rc::{Retained, Weak};
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
-use objc2_app_kit::{NSEvent, NSEventMask, NSMenu, NSResponder, NSTrackingAreaOptions, NSView};
-use objc2_foundation::{NSObject, NSPoint, NSRect};
+use objc2_app_kit::{NSEvent, NSMenu, NSResponder, NSTrackingAreaOptions, NSView};
+use objc2_foundation::{NSObject, NSRect};
 
 use crate::delegate::Delegate;
 use crate::view::surface::Surface;
@@ -93,26 +91,7 @@ impl ClippyView {
             &view,
             NSTrackingAreaOptions::MouseEnteredAndExited | NSTrackingAreaOptions::MouseMoved,
         );
-        let follow = {
-            let view = Weak::from_retained(&view);
-            move || {
-                if let Some(view) = view.load() {
-                    view.follow_pointer();
-                }
-            }
-        };
-        let elsewhere = RcBlock::new({
-            let follow = follow.clone();
-            move |_| follow()
-        });
-        let here = RcBlock::new(move |event: NonNull<NSEvent>| {
-            follow();
-            event.as_ptr()
-        });
-        NSEvent::addGlobalMonitorForEventsMatchingMask_handler(NSEventMask::MouseMoved, &elsewhere);
-        unsafe {
-            NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::MouseMoved, &here)
-        };
+        super::watch_pointer(&view, Self::follow_pointer);
         view
     }
 
@@ -125,29 +104,16 @@ impl ClippyView {
         let Some(window) = self.window() else {
             return;
         };
-        let (x, y) = self.pixel_at(self.convertPoint_fromView(
-            window.convertPointFromScreen(NSEvent::mouseLocation()),
-            None,
-        ));
+        let (x, y) = super::pointer(self, &window);
         let event = {
             let canvas = self.ivars().canvas.borrow();
             let canvas = canvas.as_ref().filter(|_| window.isVisible());
-            let ignores = !canvas.is_some_and(|canvas| canvas.is_solid(x, y));
-            if window.ignoresMouseEvents() != ignores {
-                window.setIgnoresMouseEvents(ignores);
-            }
+            super::catch_clicks(&window, canvas.is_some_and(|canvas| canvas.is_solid(x, y)));
             self.ivars().hover.borrow_mut().follow(canvas, x, y)
         };
         if let Some(event) = event {
             self.send(event);
         }
-    }
-
-    #[expect(clippy::cast_possible_truncation)]
-    fn pixel_at(&self, point: NSPoint) -> (i32, i32) {
-        let x = point.x.floor() as i32;
-        let y = (self.bounds().size.height - point.y).floor() as i32;
-        (x, y)
     }
 
     fn send(&self, event: Event) {
