@@ -125,6 +125,26 @@ fn counts_down_in_minutes_then_seconds_then_says_now() {
 }
 
 #[test]
+fn a_reminder_left_on_screen_calls_again_at_the_next_lead_time_and_as_the_event_starts() {
+    let settings = format!("{QUIET}remind_before = [\"10m\", \"5m\"]");
+    let standup = event("standup", "Standup", at(10, 0), 30);
+    let mut harness = calendar(&settings, vec![standup], at(9, 50));
+    let early = harness.id("In 10 minutes:\nStandup");
+    harness.set_time(at(9, 54));
+    assert_eq!(harness.id("In 6 minutes:\nStandup"), early);
+    harness.set_time(at(9, 55));
+    let late = harness.id("In 5 minutes:\nStandup");
+    assert_ne!(late, early);
+    harness.set_time(at_second(9, 59, 59));
+    assert_eq!(harness.id("In 1 second:\nStandup"), late);
+    harness.set_time(at(10, 0));
+    let started = harness.id("Now:\nStandup");
+    assert_ne!(started, late);
+    harness.set_time(at(10, 10));
+    assert_eq!(harness.id("Now:\nStandup"), started);
+}
+
+#[test]
 fn counts_down_hours_and_names_the_day_further_ahead() {
     let settings = format!("{QUIET}remind_before = [\"48h\", \"90m\"]");
     let review = event("review", "Review", day_after(2, 10, 0), 60);

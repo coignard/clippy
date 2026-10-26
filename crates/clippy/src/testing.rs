@@ -87,6 +87,10 @@ impl Harness {
         self.due().into_iter().map(|due| due.notice.text).collect()
     }
 
+    pub fn id(&self, text: &str) -> String {
+        self.find(text).notice.id
+    }
+
     pub fn checkbox(&self, text: &str) -> Option<String> {
         self.find(text).notice.checkbox
     }

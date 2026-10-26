@@ -170,6 +170,8 @@ impl Calendar {
     ) -> Notice<Action> {
         let id = appointment.id.clone();
         let until = expiry(appointment);
+        let ongoing = appointment.start <= now;
+        let since = if ongoing { appointment.start } else { alert };
         let text = match settings.remind_with {
             RemindWith::Countdown => {
                 format!(
@@ -183,13 +185,13 @@ impl Calendar {
             }
         };
         let notice = Notice::new(
-            &appointment.id,
+            format!("{id}@{since}"),
             text,
             Action::Dismiss {
                 id: id.clone(),
                 alert,
                 until,
-                ongoing: appointment.start <= now,
+                ongoing,
             },
         )
         .over_full_screen(settings.show_in_full_screen)
