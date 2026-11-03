@@ -201,7 +201,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "clippy"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "bitflags 2.13.2",
  "enum-map",
@@ -224,7 +224,7 @@ dependencies = [
 
 [[package]]
 name = "clippy-calendar"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "clippy",
  "jiff",
@@ -235,7 +235,7 @@ dependencies = [
 
 [[package]]
 name = "clippy-focus"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "clippy",
  "jiff",
@@ -245,7 +245,7 @@ dependencies = [
 
 [[package]]
 name = "clippy-habits"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "clippy",
  "jiff",
@@ -255,7 +255,7 @@ dependencies = [
 
 [[package]]
 name = "clippy-inbox"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "clippy",
  "jiff",
@@ -267,7 +267,7 @@ dependencies = [
 
 [[package]]
 name = "clippy-macos"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "block2",
  "clippy",
@@ -293,7 +293,7 @@ dependencies = [
 
 [[package]]
 name = "clippy-reminders"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "clippy",
  "fastrand",
@@ -306,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "clippy-sleepy"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "clippy",
  "jiff",
@@ -1331,7 +1331,7 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 
 [[package]]
 name = "xtask"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "cargo_metadata",
  "clap",
