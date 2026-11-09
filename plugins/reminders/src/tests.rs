@@ -446,17 +446,6 @@ fn a_random_reminder_comes_once_at_its_minute_and_stays_put() {
     assert_eq!(harness.next_change(), Some(next_day(0, 0)));
 }
 
-#[test]
-fn a_random_reminder_skips_a_day_that_starts_after_its_hours() {
-    let mut harness = reminders(music(), at(21, 0));
-    assert_eq!(harness.notices(), NOTHING);
-    assert_eq!(harness.next_change(), Some(next_day(0, 0)));
-    harness.set_time(next_day(6, 0));
-    let picked = harness.next_change().unwrap();
-    assert_eq!(picked.date(), next_day(0, 0).date());
-    assert!(picked >= next_day(7, 0));
-}
-
 const FRIEND: &str = "Call a friend.";
 
 #[test]
@@ -509,6 +498,26 @@ fn a_reminder_at_a_random_time_on_random_days_tells_when_it_comes_next() {
         called += 1;
     }
     assert_eq!(called, 3);
+}
+
+#[test]
+fn a_random_time_that_went_by_before_the_app_started_shows_at_once() {
+    let friend = settings(&format!(
+        r#"reminders = [{{ text = "{FRIEND}", random = "8:00-17:00" }}]"#
+    ));
+    for seed in 0..20 {
+        fastrand::seed(seed);
+        let mut harness = reminders(friend.clone(), at(18, 23));
+        assert_eq!(harness.notices(), [FRIEND], "seed {seed}");
+        harness.check(FRIEND);
+        assert_eq!(harness.notices(), NOTHING);
+        harness.relaunch();
+        assert_eq!(harness.notices(), NOTHING, "seed {seed}");
+        harness.set_time(next_day(7, 59));
+        assert_eq!(harness.notices(), NOTHING);
+        let next = harness.next_change().unwrap();
+        assert!(next >= next_day(8, 0) && next < next_day(17, 0), "{next}");
+    }
 }
 
 const ROUTINE: &str = "Morning routine:";

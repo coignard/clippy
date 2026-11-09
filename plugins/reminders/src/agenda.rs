@@ -92,7 +92,7 @@ impl Agenda {
             }
             for &hours in spans {
                 if self.pick(&reminder.key(), hours, now.date()).is_none()
-                    && let Some(at) = random_time(settings, hours, now)
+                    && let Some(at) = random_time(settings, hours, now.date())
                 {
                     self.picks.push(Pick {
                         text: reminder.key(),
@@ -146,14 +146,13 @@ fn monday_of(day: Date) -> Date {
     day.checked_sub(since.days()).unwrap_or(day)
 }
 
-fn random_time(settings: &Settings, hours: Hours, now: DateTime) -> Option<DateTime> {
-    let day = now.date();
+fn random_time(settings: &Settings, hours: Hours, day: Date) -> Option<DateTime> {
     let end = day.to_datetime(hours.end().time());
     let free: Vec<DateTime> = day
         .to_datetime(hours.start().time())
         .series(1.minute())
         .take_while(|&at| at < end)
-        .filter(|&at| at > now && !settings.is_quiet(at.time()))
+        .filter(|&at| !settings.is_quiet(at.time()))
         .collect();
     fastrand::choice(free)
 }
@@ -205,16 +204,22 @@ mod tests {
     }
 
     #[test]
-    fn a_late_start_picks_from_what_is_left() {
+    fn a_late_start_still_picks_from_all_the_hours() {
         let settings = music("");
+        let mut earlier = false;
         for seed in 0..50 {
             fastrand::seed(seed);
             let agenda = begun(&settings, MONDAY.at(15, 0, 30, 0));
             let at = agenda.pick("Music?", hours(), MONDAY).unwrap();
-            assert!(at > MONDAY.at(15, 0, 30, 0), "{at}");
+            assert!(
+                at >= MONDAY.at(7, 0, 0, 0) && at < MONDAY.at(21, 0, 0, 0),
+                "{at}"
+            );
+            earlier |= at < MONDAY.at(15, 0, 0, 0);
         }
-        let agenda = begun(&settings, MONDAY.at(20, 59, 0, 0));
-        assert_eq!(agenda.pick("Music?", hours(), MONDAY), None);
+        assert!(earlier, "some picks should fall before the start");
+        let agenda = begun(&settings, MONDAY.at(23, 0, 0, 0));
+        assert!(agenda.pick("Music?", hours(), MONDAY).is_some());
     }
 
     #[test]
