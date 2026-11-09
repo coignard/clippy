@@ -19,10 +19,9 @@ use crate::geometry::Rect;
 use crate::graphics::{BLACK, Canvas, Color, WHITE};
 
 pub(super) const CHECKBOX: i32 = 13;
-const SURFACE: Color = [0xC0, 0xC0, 0xC0, 0xFF];
-const BUTTON_FACE: Color = [0xDF, 0xDF, 0xDF, 0xFF];
-const BUTTON_SHADOW: Color = [0x80, 0x80, 0x80, 0xFF];
-const WINDOW_FRAME: Color = [0x0A, 0x0A, 0x0A, 0xFF];
+const FACE: Color = [0xD4, 0xD0, 0xC8, 0xFF];
+const SHADOW: Color = [0x80, 0x80, 0x80, 0xFF];
+const DARK: Color = [0x40, 0x40, 0x40, 0xFF];
 const CHECKMARK_INSET: i32 = 3;
 const CHECKMARK: [&str; 7] = [
     "......#", ".....##", "#...###", "##.###.", "#####..", ".###...", "..#....",
@@ -36,9 +35,7 @@ pub(crate) struct Checkbox {
 
 pub(super) fn sunken(canvas: &mut Canvas, area: Rect, interior: Color) {
     canvas.fill(area, interior);
-    for (width, top_left, bottom_right) in
-        [(2, WINDOW_FRAME, BUTTON_FACE), (1, BUTTON_SHADOW, WHITE)]
-    {
+    for (width, top_left, bottom_right) in [(2, DARK, FACE), (1, SHADOW, WHITE)] {
         canvas.fill(Rect::new(area.x, area.y, width, area.height), top_left);
         canvas.fill(Rect::new(area.x, area.y, area.width, width), top_left);
         canvas.fill(
@@ -53,7 +50,7 @@ pub(super) fn sunken(canvas: &mut Canvas, area: Rect, interior: Color) {
 }
 
 pub(super) fn checkbox(canvas: &mut Canvas, x: i32, y: i32, state: Checkbox) {
-    let interior = if state.pressed { SURFACE } else { WHITE };
+    let interior = if state.pressed { FACE } else { WHITE };
     sunken(canvas, Rect::new(x, y, CHECKBOX, CHECKBOX), interior);
     if !state.checked {
         return;
@@ -90,10 +87,9 @@ mod tests {
                 (0..size.width)
                     .map(|x| match canvas.pixel(x, y) {
                         WHITE => 'w',
-                        SURFACE => 's',
-                        BUTTON_FACE => 'f',
-                        BUTTON_SHADOW => 'g',
-                        WINDOW_FRAME => 'k',
+                        FACE => 'f',
+                        SHADOW => 'g',
+                        DARK => 'k',
                         BLACK => '#',
                         TRANSPARENT => ' ',
                         _ => '?',
@@ -104,7 +100,7 @@ mod tests {
     }
 
     #[test]
-    fn checkbox_matches_windows_98() {
+    fn checkbox_matches_classic_windows() {
         assert_eq!(
             pixels(Checkbox {
                 checked: true,
@@ -129,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn fields_wear_the_98_css_border() {
+    fn fields_wear_the_classic_sunken_border() {
         let mut canvas = Canvas::new(Size::new(8, 21));
         sunken(&mut canvas, Rect::new(0, 0, 8, 21), WHITE);
         let rows = rows(&canvas);
@@ -146,6 +142,6 @@ mod tests {
             checked: false,
             pressed: true,
         });
-        assert_eq!(pressed[6], "gksssssssssfw");
+        assert_eq!(pressed[6], "gkffffffffffw");
     }
 }

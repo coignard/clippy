@@ -37,7 +37,7 @@ pub(crate) type Color = [u8; 4];
 pub(crate) const TRANSPARENT: Color = [0, 0, 0, 0];
 pub(crate) const BLACK: Color = [0, 0, 0, 255];
 pub(crate) const WHITE: Color = [255, 255, 255, 255];
-pub(crate) const NAVY: Color = [0, 0, 128, 255];
+pub(crate) const HIGHLIGHT: Color = [0x0A, 0x24, 0x6A, 255];
 
 pub fn printable(text: &str) -> Cow<'_, str> {
     FONT.printable(text)

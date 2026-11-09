@@ -21,16 +21,17 @@ use crate::assets::{BALLOON_FRAME, BALLOON_TIP, CLIPPIT, FONT};
 use crate::balloon::controls;
 use crate::balloon::controls::CHECKBOX;
 use crate::balloon::layout::{
-    BASELINE, BORDER, FIELD_INSET, FIELD_TEXT_WIDTH, LABEL_GAP, LINE_HEIGHT, Layout, TIP,
+    BASELINE, BORDER, FIELD_INSET, FIELD_LANE, LABEL_GAP, LINE_HEIGHT, Layout, TIP,
 };
 use crate::balloon::{Content, Placement, Prompt};
 use crate::character::Character;
 use crate::geometry::{Rect, Size};
-use crate::graphics::{BLACK, Canvas, NAVY, WHITE};
+use crate::graphics::{BLACK, Canvas, HIGHLIGHT, WHITE};
 
 const TIP_POINTING_DOWN: i32 = 0;
 const TIP_POINTING_UP: i32 = TIP.height;
 const CLIPPYS_HEAD: RangeInclusive<i32> = 41..=73;
+const TEXT_TOP: i32 = 1;
 
 impl Layout<'_> {
     pub(crate) fn render(&self, placement: Placement) -> Canvas {
@@ -91,17 +92,28 @@ fn draw_field(canvas: &mut Canvas, area: Rect, prompt: &Prompt, focused: bool) {
     controls::sunken(canvas, area, WHITE);
     let field = prompt.field();
     let text = field.text();
-    let offset = |index: usize| FONT.width(&text[..index]) - prompt.scroll();
-    let visible = text_area(area);
+    let offset =
+        |index: usize| FIELD_INSET - FIELD_LANE + FONT.width(&text[..index]) - prompt.scroll();
+    let visible = lane(area);
     let mut line = Canvas::new(Size::new(visible.width, visible.height));
-    FONT.draw(&mut line, text, offset(0), BASELINE, BLACK);
+    FONT.draw(&mut line, text, offset(0), TEXT_TOP + BASELINE, BLACK);
     let selection = field.selection();
     if focused && !selection.is_empty() {
         let (start, end) = (offset(selection.start), offset(selection.end));
-        line.fill(Rect::new(start, 0, end - start, LINE_HEIGHT), NAVY);
-        FONT.draw(&mut line, &text[selection], start, BASELINE, WHITE);
+        line.fill(
+            Rect::new(start, TEXT_TOP, end - start, LINE_HEIGHT),
+            HIGHLIGHT,
+        );
+        FONT.draw(
+            &mut line,
+            &text[selection],
+            start,
+            TEXT_TOP + BASELINE,
+            WHITE,
+        );
     } else if focused && prompt.is_caret_shown() {
-        line.fill(Rect::new(offset(field.caret()), 0, 1, LINE_HEIGHT), BLACK);
+        let caret = Rect::new(offset(field.caret()), TEXT_TOP, 1, LINE_HEIGHT);
+        line.fill(caret, BLACK);
     }
     canvas.draw(
         &line,
@@ -111,12 +123,13 @@ fn draw_field(canvas: &mut Canvas, area: Rect, prompt: &Prompt, focused: bool) {
     );
 }
 
-fn text_area(field: Rect) -> Rect {
+fn lane(field: Rect) -> Rect {
+    let inside = field.inset(2);
     Rect::new(
-        field.x + FIELD_INSET,
-        field.y + (field.height - LINE_HEIGHT) / 2,
-        FIELD_TEXT_WIDTH,
-        LINE_HEIGHT,
+        field.x + FIELD_LANE,
+        inside.y,
+        field.width - 2 * FIELD_LANE,
+        inside.height,
     )
 }
 
@@ -229,16 +242,65 @@ mod tests {
         }
     }
 
-    #[test]
-    fn fields_have_the_98_css_metrics() {
-        let prompt = prompt("Ship");
+    fn text_line(field: Rect) -> Rect {
+        let visible = lane(field);
+        let left = field.x + FIELD_INSET;
+        Rect::new(
+            left,
+            visible.y + TEXT_TOP,
+            visible.right() - left,
+            LINE_HEIGHT,
+        )
+    }
+
+    fn render_field(prompt: &Prompt) -> (Canvas, Rect) {
         let layout = Layout::new(Content::Prompt {
-            prompt: &prompt,
+            prompt,
             focused: true,
         });
         let field = layout.field(Placement::TopLeft).unwrap();
+        (layout.render(Placement::TopLeft), field)
+    }
+
+    #[test]
+    fn fields_match_the_classic_windows_edit_box() {
+        let (canvas, field) = render_field(&prompt("Ship"));
         assert_eq!(field.height, 21);
-        assert_eq!(text_area(field).x - field.x, 4);
+        let caret = field.x + 6 + FONT.width("Ship");
+        let column: Vec<bool> = (field.y..field.bottom())
+            .map(|y| canvas.pixel(caret, y) == BLACK)
+            .collect();
+        let expected: Vec<bool> = (0..21).map(|row| (3..16).contains(&row)).collect();
+        assert_eq!(column, expected);
+
+        let mut everything = prompt("Ship");
+        everything.edit(Edit::SelectAll, Instant::now());
+        let (canvas, field) = render_field(&everything);
+        let (left, top) = (field.x + 6, field.y + 3);
+        assert_eq!(canvas.pixel(left, top), HIGHLIGHT);
+        assert_eq!(canvas.pixel(left, top + LINE_HEIGHT - 1), HIGHLIGHT);
+        assert_eq!(canvas.pixel(left - 1, top), WHITE);
+        assert_eq!(canvas.pixel(left, top - 1), WHITE);
+        assert_eq!(canvas.pixel(left, top + LINE_HEIGHT), WHITE);
+    }
+
+    #[test]
+    fn long_text_is_cut_off_three_pixels_inside_the_border() {
+        let mut long = prompt(&"W".repeat(60));
+        let inked = |canvas: &Canvas, x: i32, y: Range<i32>| {
+            y.into_iter().any(|y| canvas.pixel(x, y) == BLACK)
+        };
+        let (canvas, field) = render_field(&long);
+        let line = field.y + 3..field.y + 16;
+        assert!(inked(&canvas, field.x + 3, line.clone()));
+        assert!(!inked(&canvas, field.x + 2, line.clone()));
+        let caret = field.right() - 5;
+        assert!((line.clone()).all(|y| canvas.pixel(caret, y) == BLACK));
+        assert!(!inked(&canvas, caret + 1, line.clone()));
+        long.edit(Edit::Move(Motion::Start), Instant::now());
+        let (canvas, field) = render_field(&long);
+        assert!(inked(&canvas, field.right() - 4, line.clone()));
+        assert!(!inked(&canvas, field.right() - 3, line));
     }
 
     #[test]
@@ -251,7 +313,7 @@ mod tests {
             let field = layout
                 .field(Placement::TopLeft)
                 .expect("prompts have a field");
-            (layout.render(Placement::TopLeft), text_area(field))
+            (layout.render(Placement::TopLeft), text_line(field))
         };
         let caret_drawn = |focused| {
             let (canvas, line) = render(&caret, focused);
@@ -260,7 +322,7 @@ mod tests {
         };
         let highlighted = |focused| {
             let (canvas, line) = render(&selection, focused);
-            (line.x..line.right()).any(|x| canvas.pixel(x, line.y) == NAVY)
+            (line.x..line.right()).any(|x| canvas.pixel(x, line.y) == HIGHLIGHT)
         };
         assert!(caret_drawn(true));
         assert!(!caret_drawn(false));
