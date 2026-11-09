@@ -1781,6 +1781,39 @@ fn a_visiting_clippy_finishes_his_trick_before_hiding_again() {
 }
 
 #[test]
+fn a_visiting_clippy_whose_trick_takes_him_away_stays_hidden() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(9, 59);
+    let (mut app, now) = with_chores_and(&directory, &day, AfterSummons::Hide);
+    app.handle(Event::Command(Command::Hide), now);
+    let now = settle(&mut app, now, is_absent);
+    let now = settle(&mut app, now, noticed);
+    app.character.show_off(Animation::SendMail);
+    app.visibility.linger();
+    app.handle(Event::MessageDoubleClick, now);
+    assert!(quiet(&app));
+    let now = settle(&mut app, now, |app| app.character.is_performing());
+    let gone = settle(&mut app, now, |app| {
+        assert!(is_absent(app) || app.character.is_showing_off());
+        is_absent(app)
+    });
+    app.handle(Event::Tick, gone + Duration::from_secs(10));
+    assert!(is_absent(&app));
+}
+
+#[test]
+fn a_welcome_clippy_comes_back_after_his_trick_takes_him_away() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = launch(&directory, Settings::default());
+    app.character.show_off(Animation::SendMail);
+    let now = settle(&mut app, now, |app| app.character.is_performing());
+    settle(&mut app, now, |app| {
+        assert!(app.is_present());
+        !app.character.is_performing()
+    });
+}
+
+#[test]
 fn hiding_cuts_a_visiting_clippy_trick_short() {
     let directory = TempDir::new().unwrap();
     let day = Day::starting_at(9, 59);

@@ -44,6 +44,7 @@ pub(crate) struct Character {
     sounds: Vec<Sound>,
     idleness: Idleness,
     bedtime: bool,
+    visiting: bool,
     rng: Rng,
     idle_pause: RangeInclusive<Duration>,
     animation_timeout: Duration,
@@ -129,6 +130,7 @@ impl Character {
             sounds: Vec::new(),
             idleness: Idleness::default(),
             bedtime: false,
+            visiting: false,
             rng,
             idle_pause: settings.idle_pause.clone(),
             animation_timeout: settings.animation_timeout,
@@ -268,6 +270,10 @@ impl Character {
 
     pub(crate) fn animate(&mut self) {
         let trick = Animation::random_trick(&mut self.rng);
+        self.show_off(trick);
+    }
+
+    pub(crate) fn show_off(&mut self, trick: Animation) {
         self.trick = Some(trick);
         self.perform(Act {
             animation: trick,
@@ -303,6 +309,10 @@ impl Character {
 
     pub(crate) fn set_bedtime(&mut self, bedtime: bool) {
         self.bedtime = bedtime;
+    }
+
+    pub(crate) fn set_visiting(&mut self, visiting: bool) {
+        self.visiting = visiting;
     }
 
     pub(crate) fn scribble(&mut self, now: Instant) {
@@ -356,6 +366,9 @@ impl Character {
         {
             playback.exit();
         }
+        if let State::Performing { playback, .. } = &mut self.state {
+            playback.vanish(self.visiting);
+        }
         if let Some(playback) = self.state.playback_mut() {
             playback.advance(now, &mut self.rng, &mut self.sounds);
         }
@@ -370,6 +383,12 @@ impl Character {
         }
         self.state = match mem::take(&mut self.state) {
             State::Leaving(playback) if playback.is_finished() => State::Absent,
+            State::Performing { playback, .. }
+                if playback.is_finished() && !playback.frame().shows_clippy() =>
+            {
+                self.queue.clear();
+                State::Absent
+            }
             State::Arriving(playback)
             | State::Performing { playback, .. }
             | State::Idling(playback)
@@ -1667,6 +1686,34 @@ mod tests {
         let now = settle(&mut clippy, now, is_idling);
         clippy.set_bedtime(true);
         settle_within(&mut clippy, now, Duration::from_secs(15), sound_asleep);
+    }
+
+    #[test]
+    fn a_visiting_clippy_stays_gone_once_his_trick_takes_him_away() {
+        for trick in [Animation::SendMail, Animation::EmptyTrash] {
+            let (mut clippy, now) = present(&Settings::default());
+            clippy.set_visiting(true);
+            clippy.show_off(trick);
+            let now = settle(&mut clippy, now, Character::is_performing);
+            settle(&mut clippy, now, |clippy| {
+                let gone = clippy.presence() == Presence::Absent;
+                assert!(gone || clippy.is_performing(), "{trick:?}");
+                gone
+            });
+            assert_eq!(clippy.render(), None, "{trick:?}");
+        }
+    }
+
+    #[test]
+    fn a_welcome_clippy_comes_back_from_his_trick() {
+        let (mut clippy, now) = present(&Settings::default());
+        clippy.show_off(Animation::SendMail);
+        let now = settle(&mut clippy, now, Character::is_performing);
+        settle(&mut clippy, now, |clippy| {
+            assert_eq!(clippy.presence(), Presence::Present);
+            !clippy.is_performing()
+        });
+        assert!(image(&clippy).is_some());
     }
 
     #[test]

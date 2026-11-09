@@ -369,6 +369,8 @@ impl App {
         }
         let need = self.need(&due);
         self.reconcile(now, need);
+        self.character
+            .set_visiting(self.visibility.is_only_lingering(need));
         if self.visibility.is_stepping_aside() {
             due.retain(|due| due.notice.over_full_screen);
         }

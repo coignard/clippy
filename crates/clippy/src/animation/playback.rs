@@ -71,6 +71,10 @@ impl<'a> Playback<'a> {
         }
     }
 
+    pub(crate) fn vanish(&mut self, vanishing: bool) {
+        self.vanishing = vanishing;
+    }
+
     pub(crate) fn reversed<'b>(&self, clip: &'b Clip, now: Instant) -> Playback<'b> {
         let frame = clip.frames.len().saturating_sub(self.frame + 1);
         Playback {

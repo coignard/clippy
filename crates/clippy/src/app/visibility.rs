@@ -146,13 +146,11 @@ impl Visibility {
     }
 
     pub(super) fn wants_clippy(&self, need: Need) -> bool {
-        let needed = match need {
-            Need::None => false,
-            Need::Polite => !self.is_stepping_aside(),
-            Need::Urgent => true,
-        };
-        self.debut != Debut::Waiting
-            && (self.is_welcome() || self.summons.is_some() || self.lingering || needed)
+        self.debut != Debut::Waiting && (self.lingering || self.needs_clippy(need))
+    }
+
+    pub(super) fn is_only_lingering(&self, need: Need) -> bool {
+        self.lingering && !self.needs_clippy(need)
     }
 
     pub(super) fn arrival(&mut self) -> Animation {
@@ -162,6 +160,15 @@ impl Visibility {
         } else {
             Animation::Show
         }
+    }
+
+    fn needs_clippy(&self, need: Need) -> bool {
+        let needed = match need {
+            Need::None => false,
+            Need::Polite => !self.is_stepping_aside(),
+            Need::Urgent => true,
+        };
+        self.is_welcome() || self.summons.is_some() || needed
     }
 
     fn is_welcome(&self) -> bool {
@@ -309,6 +316,19 @@ mod tests {
         visibility.linger();
         visibility.hide();
         assert!(!visibility.wants_clippy(Need::None));
+    }
+
+    #[test]
+    fn lingering_is_all_that_keeps_a_visiting_clippy() {
+        let mut visibility = hidden();
+        visibility.linger();
+        assert!(visibility.is_only_lingering(Need::None));
+        assert!(!visibility.is_only_lingering(Need::Polite));
+        visibility.summon(0, AfterSummons::Hide);
+        assert!(!visibility.is_only_lingering(Need::None));
+        visibility.end_summons();
+        visibility.stop_lingering();
+        assert!(!visibility.is_only_lingering(Need::None));
     }
 
     #[test]
