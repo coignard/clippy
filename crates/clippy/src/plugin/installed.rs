@@ -104,6 +104,8 @@ pub(crate) trait AnyPlugin {
 
     fn take_checklist_toggle(&mut self) -> bool;
 
+    fn take_copied(&mut self) -> Option<String>;
+
     fn dismiss(&mut self);
 
     fn refresh(&mut self, storage: &Storage);
@@ -117,6 +119,7 @@ pub(crate) struct Installed<P: Plugin> {
     agenda: Agenda,
     on_answer: Option<Box<dyn FnOnce(String) -> P::Action>>,
     toggles_checklist: bool,
+    copied: Option<String>,
     unsaved: bool,
 }
 
@@ -128,6 +131,7 @@ impl<P: Plugin> Installed<P> {
             agenda: Agenda::default(),
             on_answer: None,
             toggles_checklist: false,
+            copied: None,
             unsaved: false,
         }
     }
@@ -156,11 +160,13 @@ impl<P: Plugin> Installed<P> {
             character,
             question: None,
             toggles_checklist: false,
+            copied: None,
             now,
         };
         self.plugin.perform(action, &mut cx);
         self.unsaved = true;
         self.toggles_checklist = cx.toggles_checklist;
+        self.copied = cx.copied.or(self.copied.take());
         let question = cx.question?;
         self.on_answer = Some(question.answer);
         Some(Asked {
@@ -340,6 +346,10 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
 
     fn take_checklist_toggle(&mut self) -> bool {
         mem::take(&mut self.toggles_checklist)
+    }
+
+    fn take_copied(&mut self) -> Option<String> {
+        self.copied.take()
     }
 
     fn dismiss(&mut self) {

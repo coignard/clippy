@@ -17,6 +17,8 @@
 
 #![forbid(unsafe_code)]
 
+use std::mem;
+
 use clippy::shortcut::{Key, Modifiers, Shortcut};
 use clippy::{Context, MenuItem, Plugin, Question};
 use jiff::Unit;
@@ -32,6 +34,8 @@ const COMMAND_OPTION_SHIFT: Modifiers = Modifiers::COMMAND
 #[serde(default)]
 pub struct Inbox {
     items: Vec<Item>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    last_export: Vec<Item>,
     #[serde(flatten)]
     others: Map<String, Value>,
 }
@@ -56,6 +60,7 @@ pub struct Settings {
 pub enum Action {
     Ask,
     Add(String),
+    Export,
 }
 
 impl Default for Settings {
@@ -77,7 +82,10 @@ impl Plugin for Inbox {
     type Settings = Settings;
 
     fn menu(&self, settings: &Settings, _now: DateTime) -> Vec<MenuItem<Action>> {
-        vec![MenuItem::new("Add to Inbox...", Action::Ask).shortcut(settings.add_shortcut)]
+        vec![
+            MenuItem::new("Add to Inbox...", Action::Ask).shortcut(settings.add_shortcut),
+            MenuItem::new("Export to Clipboard", Action::Export).enabled(!self.items.is_empty()),
+        ]
     }
 
     fn perform(&mut self, action: Action, cx: &mut Context<'_, Self>) {
@@ -91,6 +99,16 @@ impl Plugin for Inbox {
                     added: Some(now.round(Unit::Second).unwrap_or(now)),
                     others: Map::new(),
                 });
+            }
+            Action::Export if self.items.is_empty() => {}
+            Action::Export => {
+                let lines: Vec<String> = self
+                    .items
+                    .iter()
+                    .map(|item| format!("- {}", item.text))
+                    .collect();
+                cx.copy(lines.join("\n"));
+                self.last_export = mem::take(&mut self.items);
             }
         }
     }

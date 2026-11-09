@@ -79,6 +79,7 @@ pub struct Context<'a, P: Plugin> {
     character: &'a mut Character,
     question: Option<Question<P::Action>>,
     toggles_checklist: bool,
+    copied: Option<String>,
     now: DateTime,
 }
 
@@ -89,6 +90,10 @@ impl<P: Plugin> Context<'_, P> {
 
     pub fn ask(&mut self, question: Question<P::Action>) {
         self.question = Some(question);
+    }
+
+    pub fn copy(&mut self, text: impl Into<String>) {
+        self.copied = Some(text.into());
     }
 
     pub fn toggle_checklist(&mut self) {

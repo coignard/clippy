@@ -20,13 +20,14 @@ use std::time::Instant;
 
 use clippy::menu::Entry;
 use clippy::testing::Harness;
-use clippy::{App, Edit, Event, Storage};
+use clippy::{App, Command, Edit, Effect, Event, Storage};
 use serde_json::json;
 use tempfile::TempDir;
 
 use super::*;
 
 const ADD: &str = "Add to Inbox...";
+const EXPORT: &str = "Export to Clipboard";
 const QUESTION: &str = "What's on your mind?";
 
 fn launch(directory: &TempDir) -> App {
@@ -37,22 +38,44 @@ fn launch(directory: &TempDir) -> App {
     app
 }
 
-fn add(app: &mut App, text: &str) {
-    let now = Instant::now();
-    let command = app
-        .menu(now)
+fn item(app: &App, title: &str) -> (Command, bool) {
+    app.menu(Instant::now())
         .into_iter()
         .find_map(|entry| match entry {
             Entry::Submenu { entries, .. } => entries.into_iter().find_map(|entry| match entry {
-                Entry::Item { command, .. } => Some(command),
-                Entry::Submenu { .. } | Entry::Separator => None,
+                Entry::Item {
+                    title: item,
+                    command,
+                    enabled,
+                    ..
+                } if item == title => Some((command, enabled)),
+                _ => None,
             }),
             Entry::Item { .. } | Entry::Separator => None,
         })
-        .expect("the menu should offer to add to the inbox");
+        .unwrap_or_else(|| panic!("the menu should offer {title:?}"))
+}
+
+fn add(app: &mut App, text: &str) {
+    let now = Instant::now();
+    let (command, _) = item(app, ADD);
     app.handle(Event::Command(command), now);
     app.handle(Event::Edit(Edit::Insert(text.to_owned())), now);
     app.handle(Event::Submit, now);
+}
+
+fn export(app: &mut App) -> Vec<String> {
+    let (command, enabled) = item(app, EXPORT);
+    assert!(enabled, "there should be something to export");
+    app.take_effects();
+    app.handle(Event::Command(command), Instant::now());
+    app.take_effects()
+        .into_iter()
+        .filter_map(|effect| match effect {
+            Effect::Copy(text) => Some(text),
+            Effect::Play(_) => None,
+        })
+        .collect()
 }
 
 fn read(directory: &TempDir) -> Value {
@@ -72,7 +95,10 @@ fn texts(inbox: &Value) -> Vec<&str> {
 #[test]
 fn asks_and_keeps_the_answer_out_of_sight() {
     let mut inbox = Harness::new(Inbox::default());
-    assert_eq!(inbox.menu(), [(ADD.to_owned(), true)]);
+    assert_eq!(
+        inbox.menu(),
+        [(ADD.to_owned(), true), (EXPORT.to_owned(), false)]
+    );
     inbox.choose(ADD);
     assert_eq!(inbox.question(), Some(QUESTION));
     assert_eq!(inbox.draft(), Some(""));
@@ -134,4 +160,75 @@ fn writes_and_reads_its_settings() {
     let custom: Settings = toml::from_str(r#"add_shortcut = "Ctrl+Option+I""#).unwrap();
     assert_eq!(custom.add_shortcut, "Ctrl+Option+I".parse().unwrap());
     assert!(toml::from_str::<Settings>(r#"shortcut = "Cmd+I""#).is_err());
+}
+
+#[test]
+fn exporting_copies_everything_and_empties_the_inbox() {
+    let directory = TempDir::new().unwrap();
+    let mut app = launch(&directory);
+    add(&mut app, "Call the bank");
+    add(&mut app, "Buy milk");
+    assert_eq!(export(&mut app), ["- Call the bank\n- Buy milk"]);
+    let inbox = read(&directory);
+    assert_eq!(texts(&inbox), Vec::<&str>::new());
+    assert!(!item(&app, EXPORT).1);
+    add(&mut app, "Water the plants");
+    assert_eq!(export(&mut app), ["- Water the plants"]);
+}
+
+#[test]
+fn exporting_keeps_the_last_export_in_case_the_clipboard_lost_it() {
+    let directory = TempDir::new().unwrap();
+    let mut app = launch(&directory);
+    add(&mut app, "Call the bank");
+    export(&mut app);
+    let last = |inbox: &Value| -> Vec<String> {
+        inbox["last_export"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["text"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(last(&read(&directory)), ["Call the bank"]);
+    add(&mut app, "Buy milk");
+    assert_eq!(last(&read(&directory)), ["Call the bank"]);
+    export(&mut app);
+    assert_eq!(last(&read(&directory)), ["Buy milk"]);
+}
+
+#[test]
+fn exports_what_another_program_filed_too() {
+    let directory = TempDir::new().unwrap();
+    let mut app = launch(&directory);
+    add(&mut app, "Call the bank");
+    let outside = json!({
+        "items": [{ "text": "Call the bank" }, { "text": "Buy milk", "from": "Shortcuts" }],
+    });
+    fs::write(directory.path().join("Inbox.json"), outside.to_string()).unwrap();
+    assert_eq!(export(&mut app), ["- Call the bank\n- Buy milk"]);
+    let inbox = read(&directory);
+    assert_eq!(inbox["last_export"][1]["from"], json!("Shortcuts"));
+}
+
+#[test]
+fn an_unreadable_inbox_is_set_aside_not_overwritten() {
+    let directory = TempDir::new().unwrap();
+    let mut app = launch(&directory);
+    add(&mut app, "Call the bank");
+    let broken = r#"{ "items": [{ "text": "Buy milk" }"#;
+    fs::write(directory.path().join("Inbox.json"), broken).unwrap();
+    add(&mut app, "Water the plants");
+    assert_eq!(
+        texts(&read(&directory)),
+        ["Call the bank", "Water the plants"]
+    );
+    let aside = fs::read_to_string(directory.path().join("Inbox (unreadable).json")).unwrap();
+    assert_eq!(aside, broken);
+    drop(app);
+    fs::write(directory.path().join("Inbox.json"), broken).unwrap();
+    let mut app = launch(&directory);
+    add(&mut app, "Buy bread");
+    let aside = fs::read_to_string(directory.path().join("Inbox (unreadable 2).json")).unwrap();
+    assert_eq!(aside, broken);
 }

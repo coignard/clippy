@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::mem;
+
 use jiff::civil::DateTime;
 
 use crate::app::{Command, Moment};
@@ -42,6 +44,7 @@ pub(crate) struct Plugins {
     questions: usize,
     showing: Option<Showing>,
     checklists: usize,
+    copies: Vec<String>,
 }
 
 struct Asking {
@@ -381,6 +384,10 @@ impl Plugins {
         });
     }
 
+    pub(crate) fn take_copies(&mut self) -> Vec<String> {
+        mem::take(&mut self.copies)
+    }
+
     pub(crate) fn snooze(&mut self, due: &Due, character: &mut Character, moment: Moment) {
         self.act(due.plugin, moment, |installed| {
             installed.snooze(&due.notice.id, character, moment.local)
@@ -435,6 +442,7 @@ impl Plugins {
             installed.refresh(storage);
         }
         let asked = perform(installed.as_mut());
+        self.copies.extend(installed.take_copied());
         if installed.take_checklist_toggle() {
             self.toggle_checklist(plugin, moment.local);
         }

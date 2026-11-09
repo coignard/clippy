@@ -196,6 +196,8 @@ impl App {
         if !swallowed {
             self.respond(event, moment);
         }
+        let copies = self.plugins.take_copies();
+        self.effects.extend(copies.into_iter().map(Effect::Copy));
         if puts_away && self.plugins.checklists_shown() == checklists {
             self.plugins.close_checklist();
         }
