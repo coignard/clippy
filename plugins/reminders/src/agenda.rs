@@ -20,7 +20,8 @@ use jiff::ToSpan;
 use jiff::civil::{Date, DateTime};
 use serde::{Deserialize, Serialize};
 
-use crate::settings::{Schedule, Settings};
+use crate::days::Days;
+use crate::settings::{Reminder, Schedule, Settings};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -29,6 +30,8 @@ pub(crate) struct Agenda {
     pub(crate) started: Option<DateTime>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     picks: Vec<Pick>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    weeks: Vec<Week>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,12 +41,22 @@ struct Pick {
     at: DateTime,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct Week {
+    text: String,
+    from: Days,
+    count: u8,
+    monday: Date,
+    days: Vec<Date>,
+}
+
 impl Agenda {
     #[cfg(test)]
     pub(crate) fn starting(started: Option<DateTime>) -> Self {
         Self {
             started,
             picks: Vec::new(),
+            weeks: Vec::new(),
         }
     }
 
@@ -55,11 +68,26 @@ impl Agenda {
             self.started = Some(now);
         }
         self.picks.retain(|pick| pick.at.date() == now.date());
+        let monday = monday_of(now.date());
+        self.weeks.retain(|week| week.monday == monday);
+        for reminder in &settings.reminders {
+            if let Some(count) = reminder.random_days
+                && self.week(reminder).is_none()
+            {
+                self.weeks.push(Week {
+                    text: reminder.text.clone(),
+                    from: reminder.days,
+                    count,
+                    monday,
+                    days: random_days(reminder.days, count, now.date()),
+                });
+            }
+        }
         for reminder in &settings.reminders {
             let Schedule::Random(spans) = &reminder.schedule else {
                 continue;
             };
-            if !reminder.days.contains(now.weekday()) {
+            if !self.is_on(reminder, now.date()) {
                 continue;
             }
             for &hours in spans {
@@ -76,12 +104,46 @@ impl Agenda {
         }
     }
 
+    pub(crate) fn is_on(&self, reminder: &Reminder, day: Date) -> bool {
+        match reminder.random_days {
+            Some(_) => self
+                .week(reminder)
+                .is_some_and(|week| week.days.contains(&day)),
+            None => reminder.days.contains(day.weekday()),
+        }
+    }
+
+    fn week(&self, reminder: &Reminder) -> Option<&Week> {
+        self.weeks.iter().find(|week| {
+            week.text == reminder.text
+                && week.from == reminder.days
+                && Some(week.count) == reminder.random_days
+        })
+    }
+
     pub(crate) fn pick(&self, text: &str, hours: Hours, day: Date) -> Option<DateTime> {
         self.picks
             .iter()
             .find(|pick| pick.text == text && pick.hours == hours && pick.at.date() == day)
             .map(|pick| pick.at)
     }
+}
+
+fn random_days(from: Days, count: u8, today: Date) -> Vec<Date> {
+    let mut left: Vec<Date> = monday_of(today)
+        .series(1.day())
+        .take(7)
+        .filter(|&day| day >= today && from.contains(day.weekday()))
+        .collect();
+    fastrand::shuffle(&mut left);
+    left.truncate(count.into());
+    left.sort_unstable();
+    left
+}
+
+fn monday_of(day: Date) -> Date {
+    let since = i64::from(day.weekday().to_monday_zero_offset());
+    day.checked_sub(since.days()).unwrap_or(day)
 }
 
 fn random_time(settings: &Settings, hours: Hours, now: DateTime) -> Option<DateTime> {
@@ -189,6 +251,101 @@ mod tests {
         assert_eq!(saturday.weekday(), Weekday::Saturday);
         let agenda = begun(&settings, saturday.at(6, 0, 0, 0));
         assert_eq!(agenda.pick("Music?", hours(), saturday), None);
+    }
+
+    const NO_DAYS: [Date; 0] = [];
+
+    fn friend(extra: &str) -> Settings {
+        settings(&format!(
+            r#"reminders = [{{ text = "Call a friend.", random = "10:00-20:00", random_days = 2{extra} }}]"#
+        ))
+    }
+
+    fn picked_days(agenda: &Agenda, settings: &Settings, monday: Date) -> Vec<Date> {
+        monday
+            .series(1.day())
+            .take(7)
+            .filter(|&day| agenda.is_on(&settings.reminders[0], day))
+            .collect()
+    }
+
+    #[test]
+    fn picks_that_many_days_of_the_week_within_its_days() {
+        let anywhere = friend("");
+        let weekends = friend(r#", days = ["Sat", "Sun"]"#);
+        let mut seen = BTreeSet::new();
+        for seed in 0..50 {
+            fastrand::seed(seed);
+            let agenda = begun(&anywhere, MONDAY.at(0, 0, 0, 0));
+            let days = picked_days(&agenda, &anywhere, MONDAY);
+            assert_eq!(days.len(), 2, "{days:?}");
+            seen.extend(days.iter().map(|day| day.weekday().to_monday_zero_offset()));
+            let agenda = begun(&weekends, MONDAY.at(0, 0, 0, 0));
+            let days = picked_days(&agenda, &weekends, MONDAY);
+            assert_eq!(days, [date(2026, 10, 24), date(2026, 10, 25)]);
+        }
+        assert_eq!(seen.len(), 7, "{seen:?}");
+    }
+
+    #[test]
+    fn keeps_the_days_for_the_week_and_picks_again_the_next() {
+        let settings = friend("");
+        let mut agenda = begun(&settings, MONDAY.at(0, 0, 0, 0));
+        let week = picked_days(&agenda, &settings, MONDAY);
+        let restored: Agenda =
+            serde_json::from_value(serde_json::to_value(&agenda).unwrap()).unwrap();
+        assert_eq!(restored, agenda);
+        for (offset, seed) in (1..7).zip(10..) {
+            fastrand::seed(seed);
+            let day = MONDAY.checked_add(offset.days()).unwrap();
+            agenda.begin(&settings, day.at(0, 0, 0, 0));
+            assert_eq!(picked_days(&agenda, &settings, MONDAY), week);
+        }
+        let weeks: BTreeSet<Vec<i8>> = (1..20)
+            .map(|week| {
+                let monday = MONDAY.checked_add((7 * week).days()).unwrap();
+                agenda.begin(&settings, monday.at(0, 0, 0, 0));
+                assert_eq!(picked_days(&agenda, &settings, MONDAY), NO_DAYS);
+                let days = picked_days(&agenda, &settings, monday);
+                assert_eq!(days.len(), 2);
+                days.iter()
+                    .map(|day| day.weekday().to_monday_zero_offset())
+                    .collect()
+            })
+            .collect();
+        assert!(weeks.len() > 1);
+    }
+
+    #[test]
+    fn a_late_start_in_the_week_picks_from_the_days_left() {
+        let settings = friend("");
+        let thursday = date(2026, 10, 22);
+        for seed in 0..20 {
+            fastrand::seed(seed);
+            let agenda = begun(&settings, thursday.at(12, 0, 0, 0));
+            let days = picked_days(&agenda, &settings, MONDAY);
+            assert_eq!(days.len(), 2);
+            assert!(days.iter().all(|&day| day >= thursday), "{days:?}");
+        }
+        let settings = friend(r#", days = ["Mon", "Tue"]"#);
+        let agenda = begun(&settings, thursday.at(12, 0, 0, 0));
+        assert_eq!(picked_days(&agenda, &settings, MONDAY), NO_DAYS);
+    }
+
+    #[test]
+    fn picks_a_random_time_only_on_the_days_picked() {
+        let settings = friend("");
+        let mut agenda = begun(&settings, MONDAY.at(0, 0, 0, 0));
+        let hours: Hours = "10:00-20:00".parse().unwrap();
+        for day in MONDAY.series(1.day()).take(7) {
+            agenda.begin(&settings, day.at(0, 0, 0, 0));
+            let picked = agenda.pick("Call a friend.", hours, day);
+            assert_eq!(
+                picked.is_some(),
+                agenda.is_on(&settings.reminders[0], day),
+                "{day}"
+            );
+        }
     }
 
     #[test]

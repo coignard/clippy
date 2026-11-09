@@ -46,6 +46,7 @@ pub(crate) struct Reminder {
     pub(crate) text: String,
     pub(crate) schedule: Schedule,
     pub(crate) days: Days,
+    pub(crate) random_days: Option<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -81,6 +82,10 @@ pub(crate) enum SettingsError {
     NoHours(String),
     #[error("`{0}` picks a random time across midnight, keep its hours within a day")]
     Overnight(String),
+    #[error("`{0}` needs at least one random day")]
+    NoRandomDays(String),
+    #[error("`{0}` picks more random days than its `days` allow")]
+    TooManyRandomDays(String),
     #[error("snoozing needs at least one duration")]
     NoSnoozes,
 }
@@ -101,6 +106,8 @@ struct RawReminder {
     until: Option<TimeOfDay>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     days: Option<Days>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    random_days: Option<u8>,
 }
 
 struct OneOrMany<T>(Vec<T>);
@@ -231,10 +238,19 @@ impl TryFrom<RawReminder> for Reminder {
             }
             _ => return Err(SettingsError::TwoSchedules(text)),
         };
+        let days = raw.days.unwrap_or_default();
+        match raw.random_days {
+            Some(0) => return Err(SettingsError::NoRandomDays(text)),
+            Some(count) if usize::from(count) > days.count() => {
+                return Err(SettingsError::TooManyRandomDays(text));
+            }
+            _ => {}
+        }
         Ok(Self {
             text,
             schedule,
-            days: raw.days.unwrap_or_default(),
+            days,
+            random_days: raw.random_days,
         })
     }
 }
@@ -258,6 +274,7 @@ impl From<Reminder> for RawReminder {
             from,
             until,
             days: (!reminder.days.is_every_day()).then_some(reminder.days),
+            random_days: reminder.random_days,
         }
     }
 }
@@ -352,6 +369,8 @@ mod tests {
                 { text = "Have a glass of water.", every = "1h" },
                 { text = "Look away from the screen.", every = "20m", from = "9:00", until = "18:00" },
                 { text = "How about some music?", random = ["9:00-12:00", "14:00-18:00"], days = ["Mon", "Fri"] },
+                { text = "Call a friend.", random = "10:00-20:00", random_days = 2 },
+                { text = "Water the plants.", time = "9:00", random_days = 1, days = ["Sat", "Sun"] },
             ]
             "#,
         )
@@ -392,6 +411,11 @@ mod tests {
                 "14:00-18:00".parse().unwrap()
             ])
         );
+        assert_eq!(settings.reminders[4].random_days, None);
+        assert_eq!(settings.reminders[5].random_days, Some(2));
+        assert!(settings.reminders[5].days.is_every_day());
+        assert_eq!(settings.reminders[6].random_days, Some(1));
+        assert!(!settings.reminders[6].days.contains(Weekday::Friday));
         let written = toml::to_string(&settings).unwrap();
         assert_eq!(read(&written), Ok(settings));
     }
@@ -443,6 +467,18 @@ mod tests {
             (
                 r#"{ text = "Stretch.", time = "10:00", when = "always" }"#,
                 "unknown field",
+            ),
+            (
+                r#"{ text = "Call a friend.", time = "18:00", random_days = 0 }"#,
+                "at least one random day",
+            ),
+            (
+                r#"{ text = "Call a friend.", time = "18:00", random_days = 3, days = ["Sat", "Sun"] }"#,
+                "more random days than its `days` allow",
+            ),
+            (
+                r#"{ text = "Call a friend.", time = "18:00", random_days = 8 }"#,
+                "more random days than its `days` allow",
             ),
         ] {
             let error = read(&format!("reminders = [{text}]")).unwrap_err();

@@ -42,6 +42,10 @@ impl Days {
         self == Self::EVERY_DAY
     }
 
+    pub(crate) fn count(self) -> usize {
+        self.0.iter().filter(|&&day| day).count()
+    }
+
     fn iter(self) -> impl Iterator<Item = Weekday> {
         Weekday::Monday
             .cycle_forward()

@@ -456,3 +456,57 @@ fn a_random_reminder_skips_a_day_that_starts_after_its_hours() {
     assert_eq!(picked.date(), next_day(0, 0).date());
     assert!(picked >= next_day(7, 0));
 }
+
+const FRIEND: &str = "Call a friend.";
+
+#[test]
+fn a_reminder_on_random_days_comes_only_on_those_days_at_its_time() {
+    let friend = settings(&format!(
+        r#"reminders = [{{ text = "{FRIEND}", time = "18:00", random_days = 2, days = ["Mon", "Tue", "Wed", "Thu", "Fri"] }}]"#
+    ));
+    for seed in 0..20 {
+        fastrand::seed(seed);
+        let mut harness = reminders(friend.clone(), at(0, 0));
+        let mut called = Vec::new();
+        for day in DAY.series(1.day()).take(7) {
+            harness.set_time(day.at(17, 59, 0, 0));
+            assert_eq!(harness.notices(), NOTHING);
+            harness.set_time(day.at(18, 0, 0, 0));
+            if harness.notices() == [FRIEND] {
+                called.push(day.weekday());
+                harness.check(FRIEND);
+            }
+        }
+        assert_eq!(called.len(), 2, "{called:?}");
+        assert!(
+            called.iter().all(|day| day.to_monday_one_offset() <= 5),
+            "{called:?}"
+        );
+    }
+}
+
+#[test]
+fn a_reminder_at_a_random_time_on_random_days_tells_when_it_comes_next() {
+    let friend = settings(&format!(
+        r#"reminders = [{{ text = "{FRIEND}", random = "10:00-20:00", random_days = 3 }}]"#
+    ));
+    fastrand::seed(5);
+    let mut harness = reminders(friend, at(0, 0));
+    let mut called = 0;
+    for day in DAY.series(1.day()).take(7) {
+        harness.set_time(day.at(0, 0, 0, 0));
+        let next = harness.next_change().unwrap();
+        if next.date() != day {
+            continue;
+        }
+        assert!(
+            next >= day.at(10, 0, 0, 0) && next < day.at(20, 0, 0, 0),
+            "{next}"
+        );
+        harness.set_time(next);
+        assert_eq!(harness.notices(), [FRIEND]);
+        harness.check(FRIEND);
+        called += 1;
+    }
+    assert_eq!(called, 3);
+}

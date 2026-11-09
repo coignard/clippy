@@ -24,7 +24,7 @@ use crate::settings::{Reminder, Schedule};
 
 impl Reminder {
     pub(crate) fn latest(&self, now: DateTime, agenda: &Agenda) -> Option<DateTime> {
-        let day = self.day(now.date())?;
+        let day = self.day(now.date(), agenda)?;
         match &self.schedule {
             Schedule::At(times) => times
                 .iter()
@@ -45,7 +45,7 @@ impl Reminder {
     }
 
     pub(crate) fn next(&self, now: DateTime, agenda: &Agenda) -> Option<DateTime> {
-        let day = self.day(now.date())?;
+        let day = self.day(now.date(), agenda)?;
         match &self.schedule {
             Schedule::At(times) => times
                 .iter()
@@ -65,8 +65,8 @@ impl Reminder {
         }
     }
 
-    fn day(&self, day: Date) -> Option<Date> {
-        self.days.contains(day.weekday()).then_some(day)
+    fn day(&self, day: Date, agenda: &Agenda) -> Option<Date> {
+        agenda.is_on(self, day).then_some(day)
     }
 
     fn grid(&self, day: Date, started: Option<DateTime>) -> Option<Grid> {
@@ -132,6 +132,7 @@ mod tests {
             text: "Stretch.".into(),
             schedule,
             days: Days::EVERY_DAY,
+            random_days: None,
         }
     }
 
