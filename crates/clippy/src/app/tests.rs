@@ -416,6 +416,70 @@ impl Plugin for Alarm {
     }
 }
 
+const ROUNDS: [(&str, i8, i8); 2] = [("Standup", 10, 5), ("Review", 10, 10)];
+
+#[derive(Default, Serialize, Deserialize)]
+struct Rounds {
+    dismissed: BTreeSet<String>,
+}
+
+impl Plugin for Rounds {
+    const NAME: &'static str = "Rounds";
+
+    type Action = String;
+
+    type Settings = NoSettings;
+
+    fn notices(&self, _: &NoSettings, now: DateTime) -> Vec<Notice<String>> {
+        ROUNDS
+            .into_iter()
+            .filter(|&(text, hour, minute)| {
+                now.time() >= time(hour, minute, 0, 0) && !self.dismissed.contains(text)
+            })
+            .map(|(text, ..)| Notice::new(text, text, text.to_owned()).urgency(Urgency::Pressing))
+            .collect()
+    }
+
+    fn changes_at(&self, _: &NoSettings, now: DateTime) -> Option<DateTime> {
+        ROUNDS
+            .into_iter()
+            .map(|(_, hour, minute)| now.date().at(hour, minute, 0, 0))
+            .find(|&at| at > now)
+    }
+
+    fn perform(&mut self, text: String, _: &mut Context<'_, Self>) {
+        self.dismissed.insert(text);
+    }
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct Digest {
+    asked: bool,
+}
+
+impl Plugin for Digest {
+    const NAME: &'static str = "Digest";
+
+    type Action = bool;
+
+    type Settings = NoSettings;
+
+    fn menu(&self, _: &NoSettings, _: DateTime) -> Vec<MenuItem<bool>> {
+        vec![MenuItem::new("Digest", true)]
+    }
+
+    fn notices(&self, _: &NoSettings, _: DateTime) -> Vec<Notice<bool>> {
+        self.asked
+            .then(|| Notice::new("digest", "Your day", false).urgency(Urgency::Asked))
+            .into_iter()
+            .collect()
+    }
+
+    fn perform(&mut self, asked: bool, _: &mut Context<'_, Self>) {
+        self.asked = asked;
+    }
+}
+
 #[derive(Default, Serialize, Deserialize)]
 struct Sleeper;
 
@@ -641,6 +705,32 @@ fn notice(app: &App) -> Option<(&str, Checkbox)> {
         } => Some((text, checkbox)),
         _ => None,
     }
+}
+
+fn called(app: &App) -> Option<&str> {
+    match app.balloon(None)? {
+        Content::Notice { text, .. } => Some(text),
+        _ => None,
+    }
+}
+
+fn with_calls(directory: &TempDir, day: &Day, plugins: &[&str]) -> (App, Instant) {
+    let day_long = Duration::from_hours(24);
+    let settings = Settings {
+        idle_pause: day_long..=day_long,
+        plugins: enabling(plugins).plugins,
+        ..Settings::default()
+    };
+    let mut app = App::builder()
+        .plugin::<Chores>()
+        .plugin::<Rounds>()
+        .plugin::<Digest>()
+        .clock(day.clock())
+        .build(settings, Storage::new(directory.path()));
+    app.place(CLIPPY, SCREEN);
+    app.handle(Event::Launch, day.origin);
+    let now = settle(&mut app, day.origin, App::is_present);
+    (app, now)
 }
 
 fn beckons(app: &App) -> bool {
@@ -1728,6 +1818,69 @@ fn an_urgent_notice_takes_over_and_the_other_comes_back_after() {
     assert!(beckons(&app));
     app.handle(Event::MessageDoubleClick, now);
     assert_eq!(notice(&app), Some((STRETCH, UNTICKED)));
+}
+
+#[test]
+fn a_newer_urgent_notice_takes_over_and_the_older_one_comes_back_after() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(10, 4);
+    let (mut app, now) = with_calls(&directory, &day, &["Rounds"]);
+    let now = settle(&mut app, now, |app| called(app).is_some());
+    assert_eq!(now, day.at(10, 5));
+    assert_eq!(called(&app), Some("Standup"));
+    let now = day.at(10, 10);
+    app.handle(Event::Tick, now);
+    assert_eq!(called(&app), Some("Review"));
+    assert!(beckons(&app));
+    app.handle(Event::MessageDoubleClick, now);
+    assert_eq!(called(&app), Some("Standup"));
+    assert!(beckons(&app));
+}
+
+#[test]
+fn an_urgent_notice_takes_over_a_reminder_that_was_waiting_behind_another() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(10, 4);
+    let (mut app, now) = with_calls(&directory, &day, &["Chores", "Rounds"]);
+    let now = settle(&mut app, now, |app| called(app) == Some("Standup"));
+    app.handle(Event::Tick, now + Duration::from_mins(1));
+    assert_eq!(called(&app), Some("Standup"));
+    let now = day.at(10, 10);
+    app.handle(Event::Tick, now);
+    assert_eq!(called(&app), Some("Review"));
+    app.handle(Event::MessageDoubleClick, now);
+    app.handle(Event::MessageDoubleClick, now);
+    assert_eq!(called(&app), Some(STRETCH));
+}
+
+#[test]
+fn what_you_ask_for_shows_before_reminders_that_were_waiting() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(10, 31);
+    let (mut app, now) = with_calls(&directory, &day, &["Chores", "Digest"]);
+    let now = settle(&mut app, now, |app| called(app).is_some());
+    assert_eq!(called(&app), Some(STRETCH));
+    choose(&mut app, "Digest", now);
+    assert_eq!(called(&app), Some("Your day"));
+    app.handle(Event::Tick, now + Duration::from_mins(1));
+    assert_eq!(called(&app), Some("Your day"));
+    app.handle(Event::MessageDoubleClick, now + Duration::from_mins(1));
+    assert_eq!(called(&app), Some(WATER));
+}
+
+#[test]
+fn what_you_ask_for_stays_over_an_urgent_notice_already_waiting() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(10, 11);
+    let (mut app, now) = with_calls(&directory, &day, &["Rounds", "Digest"]);
+    let now = settle(&mut app, now, |app| called(app) == Some("Standup"));
+    choose(&mut app, "Digest", now);
+    assert_eq!(called(&app), Some("Your day"));
+    let later = now + Duration::from_mins(1);
+    app.handle(Event::Tick, later);
+    assert_eq!(called(&app), Some("Your day"));
+    app.handle(Event::MessageDoubleClick, later);
+    assert_eq!(called(&app), Some("Review"));
 }
 
 #[test]

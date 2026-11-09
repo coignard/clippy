@@ -15,12 +15,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::mem;
+
 use crate::balloon::{Checkbox, Content};
 use crate::plugin::{Due, Urgency};
 use crate::shortcut::Shortcut;
 
 #[derive(Default)]
 pub(super) struct Board {
+    due: Vec<Due>,
     shown: Option<Due>,
     press: Option<bool>,
     ticked: Option<Due>,
@@ -97,20 +100,28 @@ impl Board {
             self.ticked = None;
         }
         let previous = self.shown.take();
+        let known = mem::replace(&mut self.due, due.to_vec());
         if present && self.ticked.is_none() {
+            let fresh = |urgency: Urgency| {
+                due.iter().find(|candidate| {
+                    candidate.notice.urgency == urgency
+                        && !known.iter().any(|seen| seen.is(candidate))
+                })
+            };
             let kept = previous
                 .as_ref()
                 .and_then(|shown| due.iter().find(|candidate| candidate.is(shown)));
             let pressing = due
                 .iter()
                 .find(|candidate| candidate.notice.urgency == Urgency::Pressing);
-            self.shown = match kept {
-                Some(kept) if kept.notice.urgency == Urgency::Pressing || pressing.is_none() => {
-                    Some(kept)
-                }
-                _ => pressing.or(due.first()),
-            }
-            .cloned();
+            self.shown = fresh(Urgency::Asked)
+                .or_else(|| fresh(Urgency::Pressing))
+                .or_else(|| {
+                    kept.filter(|kept| kept.notice.urgency != Urgency::Normal || pressing.is_none())
+                })
+                .or(pressing)
+                .or(due.first())
+                .cloned();
         }
         let same = match (&previous, &self.shown) {
             (Some(previous), Some(shown)) => previous.is(shown),
