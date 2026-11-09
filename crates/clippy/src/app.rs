@@ -50,6 +50,7 @@ pub enum Event {
     FieldDrag { x: i32 },
     Edit(Edit),
     Submit,
+    ShiftSubmit,
     Cancel,
     Tick,
 }
@@ -144,6 +145,7 @@ impl App {
         let local = self.local(now);
         let notice = self.notices.shortcut();
         let check = self.notices.check_shortcut();
+        let question = self.question_shortcut();
         let messages = self
             .plugins
             .message_shortcuts(local)
@@ -151,6 +153,7 @@ impl App {
         for shortcut in notice
             .into_iter()
             .chain(check)
+            .chain(question)
             .chain(messages)
             .chain(self.plugins.active_shortcuts(local))
         {
@@ -183,13 +186,18 @@ impl App {
         let checking = matches!(event, Event::Shortcut(shortcut) if self.notices.check_shortcut() == Some(shortcut));
         let dismissing = checking
             || matches!(event, Event::Shortcut(shortcut) if self.notices.shortcut() == Some(shortcut));
+        let closing = !dismissing
+            && matches!(event, Event::Shortcut(shortcut) if self.question_shortcut() == Some(shortcut));
+        if closing {
+            self.plugins.dismiss();
+        }
         let ticked = checking && self.tick_notice(moment);
         let puts_away = event.interrupts_notices();
         let interrupted = !ticked && puts_away && self.interrupt_notices(moment);
         let swallowed = match event {
             Event::MessageDoubleClick => interrupted,
             Event::Shortcut(shortcut) => {
-                dismissing || (!interrupted && self.press_message(shortcut, moment))
+                dismissing || closing || (!interrupted && self.press_message(shortcut, moment))
             }
             _ => event.reaches_the_field() && self.notices.is_displayed(),
         };
@@ -304,6 +312,12 @@ impl App {
             Event::MessageDoubleClick if self.is_present() => {
                 if self.plugins.checklist().is_some() {
                     self.plugins.close_checklist();
+                } else if self
+                    .plugins
+                    .prompt()
+                    .is_some_and(|prompt| !prompt.shows_field())
+                {
+                    self.plugins.dismiss();
                 } else {
                     self.plugins.double_click(&mut self.character, moment);
                 }
@@ -311,12 +325,15 @@ impl App {
             Event::CheckboxPress { item } => {
                 if self.notices.is_displayed() {
                     self.notices.press(item);
+                } else if self.plugins.prompt().is_some() {
+                    self.plugins.press_asked_task(item);
                 } else {
                     self.plugins.press_checklist(item);
                 }
             }
             Event::CheckboxDrag { inside } => {
                 self.notices.drag(inside);
+                self.plugins.drag_asked_task(inside);
                 self.plugins.drag_checklist(inside);
             }
             Event::CheckboxRelease { inside } => {
@@ -329,22 +346,24 @@ impl App {
                     None => {}
                 }
                 self.plugins
+                    .release_asked_task(inside, &mut self.character, moment);
+                self.plugins
                     .release_checklist(inside, &mut self.character, moment);
             }
             Event::Focus => self.focused = true,
             Event::Blur => self.focused = false,
             Event::FieldPress { x, clicks, extend } => {
-                if let Some(prompt) = self.plugins.prompt_mut() {
+                if let Some(prompt) = self.field_mut() {
                     prompt.press(x.div_euclid(scale), clicks, extend, now);
                 }
             }
             Event::FieldDrag { x } => {
-                if let Some(prompt) = self.plugins.prompt_mut() {
+                if let Some(prompt) = self.field_mut() {
                     prompt.drag(x.div_euclid(scale), now);
                 }
             }
             Event::Edit(edit) => {
-                if let Some(prompt) = self.plugins.prompt_mut() {
+                if let Some(prompt) = self.field_mut() {
                     let revision = prompt.field().revision();
                     let copied = prompt.edit(edit, now);
                     if prompt.field().revision() != revision {
@@ -353,7 +372,8 @@ impl App {
                     self.effects.extend(copied.map(Effect::Copy));
                 }
             }
-            Event::Submit => self.plugins.submit(&mut self.character, moment),
+            Event::Submit => self.plugins.submit(false, &mut self.character, moment),
+            Event::ShiftSubmit => self.plugins.submit(true, &mut self.character, moment),
             Event::Cancel => self.plugins.dismiss(),
             Event::ClippyDoubleClick | Event::MessageDoubleClick | Event::Tick => {}
         }
@@ -386,7 +406,7 @@ impl App {
             .set_bedtime(self.plugins.bedtime(moment.local));
         self.character.advance(now);
         if self.character.presence() == Presence::Absent {
-            self.plugins.dismiss();
+            self.plugins.put_aside();
             self.plugins.close_checklist();
         }
         self.plugins.refresh_checklist(moment.local);
@@ -402,6 +422,7 @@ impl App {
         }
         let covered = self.notices.is_displayed();
         let present = self.is_present();
+        self.plugins.set_prompt_shown(present && !covered);
         if let Some(prompt) = self.plugins.prompt_mut() {
             if change.appeared && self.focused {
                 prompt.request_focus();
@@ -580,14 +601,30 @@ impl App {
     fn caret_deadline(&self) -> Option<Instant> {
         self.plugins
             .prompt()
+            .filter(|prompt| prompt.shows_field())
             .filter(|_| self.focused && self.is_present() && !self.has_selection())
             .map(Prompt::deadline)
+    }
+
+    fn question_shortcut(&self) -> Option<Shortcut> {
+        self.plugins
+            .prompt()
+            .filter(|_| self.is_present() && !self.notices.is_displayed())?
+            .shortcut()
+    }
+
+    fn field_mut(&mut self) -> Option<&mut Prompt> {
+        self.plugins
+            .prompt_mut()
+            .filter(|prompt| prompt.shows_field())
     }
 
     fn field_state(&self) -> FieldState {
         match self.plugins.prompt() {
             Some(_) if !self.is_present() || self.notices.is_displayed() => FieldState::Closed,
+            Some(prompt) if !prompt.shows_field() => FieldState::Closed,
             Some(_) if self.focused => FieldState::Focused,
+            Some(prompt) if prompt.is_standing() => FieldState::Closed,
             Some(prompt) => FieldState::Open(self.side_of(Some(Content::Prompt {
                 prompt,
                 focused: false,
@@ -678,6 +715,7 @@ impl Event {
                 | Self::FieldDrag { .. }
                 | Self::Edit(_)
                 | Self::Submit
+                | Self::ShiftSubmit
                 | Self::Cancel
         )
     }

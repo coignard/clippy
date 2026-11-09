@@ -45,6 +45,7 @@ pub(crate) struct Plugins {
     showing: Option<Showing>,
     checklists: usize,
     copies: Vec<String>,
+    prompt_shown: bool,
 }
 
 struct Asking {
@@ -374,14 +375,70 @@ impl Plugins {
         }
     }
 
-    pub(crate) fn submit(&mut self, character: &mut Character, moment: Moment) {
+    pub(crate) fn submit(&mut self, shift: bool, character: &mut Character, moment: Moment) {
+        if !self.prompt().is_some_and(Prompt::shows_field) {
+            return;
+        }
         let Some(Asking { plugin, prompt }) = self.asking.take() else {
             return;
         };
         let answer = prompt.into_answer();
         self.act(plugin, moment, |installed| {
-            installed.answer(answer, character, moment.local)
+            installed.answer(answer, shift, character, moment.local)
         });
+    }
+
+    pub(crate) fn press_asked_task(&mut self, task: usize) {
+        if let Some(asking) = &mut self.asking {
+            asking.prompt.press_task(task);
+        }
+    }
+
+    pub(crate) fn drag_asked_task(&mut self, inside: bool) {
+        if let Some(asking) = &mut self.asking {
+            asking.prompt.drag_task(inside);
+        }
+    }
+
+    pub(crate) fn release_asked_task(
+        &mut self,
+        inside: bool,
+        character: &mut Character,
+        moment: Moment,
+    ) {
+        let Some(asking) = &mut self.asking else {
+            return;
+        };
+        let Some(task) = asking.prompt.release_task(inside) else {
+            return;
+        };
+        let plugin = asking.plugin;
+        let wanted_focus = asking.prompt.wants_focus();
+        let field_shown = asking.prompt.shows_field();
+        self.act(plugin, moment, |installed| {
+            installed.tick_asked_task(task, character, moment.local)
+        });
+        if let Some(asking) = &mut self.asking {
+            asking.prompt.show_field(field_shown);
+            if !wanted_focus {
+                asking.prompt.leave_focus();
+            }
+        }
+        self.close_empty_list();
+    }
+
+    pub(crate) fn set_prompt_shown(&mut self, shown: bool) {
+        self.prompt_shown = shown;
+    }
+
+    pub(crate) fn close_empty_list(&mut self) {
+        if self
+            .asking
+            .as_ref()
+            .is_some_and(|asking| !asking.prompt.shows_field() && !asking.prompt.has_tasks())
+        {
+            self.dismiss();
+        }
     }
 
     pub(crate) fn take_copies(&mut self) -> Vec<String> {
@@ -418,6 +475,16 @@ impl Plugins {
         }
     }
 
+    pub(crate) fn put_aside(&mut self) {
+        if self
+            .asking
+            .as_ref()
+            .is_some_and(|asking| !asking.prompt.is_standing())
+        {
+            self.dismiss();
+        }
+    }
+
     pub(crate) fn save(&mut self) {
         let Some(storage) = &self.storage else {
             return;
@@ -441,18 +508,43 @@ impl Plugins {
         if let Some(storage) = &self.storage {
             installed.refresh(storage);
         }
+        let asking = self.asking.as_ref().map(|asking| asking.plugin);
+        installed.show_question(asking == Some(plugin) && self.prompt_shown);
         let asked = perform(installed.as_mut());
         self.copies.extend(installed.take_copied());
+        let toggles_field = installed.take_field_toggle();
         if installed.take_checklist_toggle() {
             self.toggle_checklist(plugin, moment.local);
         }
-        let Some(Asked { question, draft }) = asked else {
+        if toggles_field
+            && let Some(asking) = &mut self.asking
+            && asking.plugin == plugin
+        {
+            let shown = !asking.prompt.shows_field();
+            asking.prompt.show_field(shown);
+            if shown {
+                asking.prompt.request_focus();
+            }
+            self.close_empty_list();
+        }
+        let Some(Asked {
+            question,
+            draft,
+            tasks,
+            standing,
+            shortcut,
+        }) = asked
+        else {
             return;
         };
         if let Some(asking) = &mut self.asking
             && asking.plugin == plugin
             && asking.prompt.question() == question
         {
+            asking.prompt.set_tasks(tasks);
+            asking.prompt.set_standing(standing);
+            asking.prompt.set_shortcut(shortcut);
+            asking.prompt.show_field(true);
             asking.prompt.request_focus();
             self.questions += 1;
             return;
@@ -462,10 +554,11 @@ impl Plugins {
         {
             self.installed[previous.plugin].dismiss();
         }
-        self.asking = Some(Asking {
-            plugin,
-            prompt: Prompt::new(question, draft, moment.instant),
-        });
+        let mut prompt = Prompt::new(question, draft, moment.instant);
+        prompt.set_tasks(tasks);
+        prompt.set_standing(standing);
+        prompt.set_shortcut(shortcut);
+        self.asking = Some(Asking { plugin, prompt });
         self.questions += 1;
     }
 

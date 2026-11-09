@@ -50,6 +50,7 @@ pub(crate) struct Layout<'a> {
     pub(super) labels: Vec<Vec<Range<usize>>>,
     tops: Vec<i32>,
     separator: Option<i32>,
+    field: Option<i32>,
     text_width: i32,
     body: Size,
 }
@@ -68,46 +69,56 @@ impl<'a> Layout<'a> {
             .iter()
             .map(|(caption, _)| wrap(caption, MAX_TEXT_WIDTH - CHECKBOX - LABEL_GAP))
             .collect();
+        let separated_from = content.separated_from();
         let mut tops = Vec::new();
         let mut separator = None;
-        let (text_width, content_height) = match content {
-            Content::Prompt { .. } => (MAX_TEXT_WIDTH, height(&lines) + CONTROL_GAP + FIELD_HEIGHT),
-            _ if rows.is_empty() => (
-                longest.clamp(MIN_TEXT_WIDTH, MAX_TEXT_WIDTH),
-                height(&lines),
-            ),
-            _ => {
-                let row = rows
-                    .iter()
-                    .zip(&labels)
-                    .map(|((caption, _), label)| CHECKBOX + LABEL_GAP + widest(caption, label))
-                    .max()
-                    .unwrap_or(0);
-                let width = longest.max(row).clamp(MIN_TEXT_WIDTH, MAX_TEXT_WIDTH);
-                let mut y = height(&lines);
-                for (index, label) in labels.iter().enumerate() {
-                    if content.separated_from() == Some(index) {
-                        separator = Some(y + SEPARATOR_GAP);
-                        y += 2 * SEPARATOR_GAP + 1;
-                    } else if index > 0 {
-                        y += ROW_GAP;
-                    } else if y > 0 {
-                        y += CONTROL_GAP;
-                    }
-                    tops.push(y);
-                    y += row_height(label);
-                }
-                (width, y)
+        let mut below = |y: i32, index: usize| {
+            if separated_from == Some(index) {
+                separator = Some(y + SEPARATOR_GAP);
+                y + 2 * SEPARATOR_GAP + 1
+            } else if index > 0 {
+                y + ROW_GAP
+            } else if y > 0 {
+                y + CONTROL_GAP
+            } else {
+                y
             }
+        };
+        let mut y = height(&lines);
+        for (index, label) in labels.iter().enumerate() {
+            y = below(y, index);
+            tops.push(y);
+            y += row_height(label);
+        }
+        let field =
+            matches!(content, Content::Prompt { prompt, .. } if prompt.shows_field()).then(|| {
+                let top = if labels.is_empty() {
+                    y + CONTROL_GAP
+                } else {
+                    below(y, labels.len())
+                };
+                y = top + FIELD_HEIGHT;
+                top
+            });
+        let row = rows
+            .iter()
+            .zip(&labels)
+            .map(|((caption, _), label)| CHECKBOX + LABEL_GAP + widest(caption, label))
+            .max()
+            .unwrap_or(0);
+        let text_width = match content {
+            Content::Prompt { .. } => MAX_TEXT_WIDTH,
+            _ => longest.max(row).clamp(MIN_TEXT_WIDTH, MAX_TEXT_WIDTH),
         };
         let chrome = 2 * (BORDER + PADDING);
         Self {
             content,
-            body: Size::new(text_width + chrome, content_height + chrome),
+            body: Size::new(text_width + chrome, y + chrome),
             lines,
             labels,
             tops,
             separator,
+            field,
             text_width,
         }
     }
@@ -117,10 +128,9 @@ impl<'a> Layout<'a> {
     }
 
     pub(crate) fn field(&self, placement: Placement) -> Option<Rect> {
-        let Content::Prompt { .. } = self.content else {
-            return None;
-        };
-        Some(self.controls(placement, FIELD_HEIGHT))
+        let (left, top) = self.text_origin(placement);
+        let y = self.field?;
+        Some(Rect::new(left, top + y, self.text_width, FIELD_HEIGHT))
     }
 
     pub(crate) fn checkboxes(&self, placement: Placement) -> Vec<Rect> {
@@ -146,16 +156,6 @@ impl<'a> Layout<'a> {
     pub(super) fn text_origin(&self, placement: Placement) -> (i32, i32) {
         let body = self.body(placement);
         (body.x + BORDER + PADDING, body.y + BORDER + PADDING)
-    }
-
-    fn controls(&self, placement: Placement, height_of_controls: i32) -> Rect {
-        let (left, top) = self.text_origin(placement);
-        Rect::new(
-            left,
-            top + height(&self.lines) + CONTROL_GAP,
-            self.text_width,
-            height_of_controls,
-        )
     }
 }
 

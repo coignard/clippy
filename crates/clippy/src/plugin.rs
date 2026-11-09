@@ -77,7 +77,10 @@ pub trait Plugin: Default + Serialize + DeserializeOwned + 'static {
 
 pub struct Context<'a, P: Plugin> {
     character: &'a mut Character,
+    settings: &'a P::Settings,
     question: Option<Question<P::Action>>,
+    question_shown: bool,
+    toggles_field: bool,
     toggles_checklist: bool,
     copied: Option<String>,
     now: DateTime,
@@ -88,8 +91,20 @@ impl<P: Plugin> Context<'_, P> {
         self.now
     }
 
+    pub fn settings(&self) -> &P::Settings {
+        self.settings
+    }
+
     pub fn ask(&mut self, question: Question<P::Action>) {
         self.question = Some(question);
+    }
+
+    pub fn toggle_question(&mut self, question: Question<P::Action>) {
+        if self.question_shown {
+            self.toggles_field = true;
+        } else {
+            self.ask(question);
+        }
     }
 
     pub fn copy(&mut self, text: impl Into<String>) {
@@ -324,6 +339,10 @@ pub struct Question<A> {
     text: String,
     draft: String,
     answer: Box<dyn FnOnce(String) -> A>,
+    shift_answer: Option<Box<dyn FnOnce(String) -> A>>,
+    tasks: Vec<(String, A)>,
+    standing: bool,
+    shortcut: Option<Shortcut>,
 }
 
 impl<A> Question<A> {
@@ -332,7 +351,41 @@ impl<A> Question<A> {
             text: text.into(),
             draft: String::new(),
             answer: Box::new(answer),
+            shift_answer: None,
+            tasks: Vec::new(),
+            standing: false,
+            shortcut: None,
         }
+    }
+
+    #[must_use]
+    pub fn shortcut(self, shortcut: Shortcut) -> Self {
+        Self {
+            shortcut: Some(shortcut),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn standing(self) -> Self {
+        Self {
+            standing: true,
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn on_shift_enter(self, answer: impl FnOnce(String) -> A + 'static) -> Self {
+        Self {
+            shift_answer: Some(Box::new(answer)),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn task(mut self, label: impl Into<String>, on_tick: A) -> Self {
+        self.tasks.push((label.into(), on_tick));
+        self
     }
 
     #[must_use]

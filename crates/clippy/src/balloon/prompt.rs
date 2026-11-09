@@ -20,13 +20,20 @@ use std::time::{Duration, Instant};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::assets::FONT;
+use crate::balloon::Checkbox;
 use crate::balloon::layout::{FIELD_INSET, FIELD_TEXT_WIDTH};
 use crate::balloon::text_field::{Edit, TextField};
+use crate::shortcut::Shortcut;
 
 const CARET_BLINK: Duration = Duration::from_millis(530);
 
 pub(crate) struct Prompt {
     question: String,
+    tasks: Vec<String>,
+    press: Option<(usize, bool)>,
+    standing: bool,
+    shortcut: Option<Shortcut>,
+    field_shown: bool,
     field: TextField,
     scroll: i32,
     caret: Caret,
@@ -42,6 +49,11 @@ impl Prompt {
     pub(crate) fn new(question: String, draft: String, now: Instant) -> Self {
         let mut prompt = Self {
             question,
+            tasks: Vec::new(),
+            press: None,
+            standing: false,
+            shortcut: None,
+            field_shown: true,
             field: TextField::new(draft),
             scroll: 0,
             caret: Caret::shown(now),
@@ -54,6 +66,68 @@ impl Prompt {
 
     pub(crate) fn question(&self) -> &str {
         &self.question
+    }
+
+    pub(crate) fn tasks(&self) -> impl Iterator<Item = (&str, Checkbox)> {
+        (0..).zip(&self.tasks).map(|(task, label)| {
+            let pressed = self.press == Some((task, true));
+            let state = Checkbox {
+                checked: false,
+                pressed,
+            };
+            (label.as_str(), state)
+        })
+    }
+
+    pub(crate) fn is_standing(&self) -> bool {
+        self.standing
+    }
+
+    pub(crate) fn set_standing(&mut self, standing: bool) {
+        self.standing = standing;
+    }
+
+    pub(crate) fn shortcut(&self) -> Option<Shortcut> {
+        self.shortcut
+    }
+
+    pub(crate) fn set_shortcut(&mut self, shortcut: Option<Shortcut>) {
+        self.shortcut = shortcut;
+    }
+
+    pub(crate) fn shows_field(&self) -> bool {
+        self.field_shown
+    }
+
+    pub(crate) fn show_field(&mut self, shown: bool) {
+        self.field_shown = shown;
+    }
+
+    pub(crate) fn has_tasks(&self) -> bool {
+        !self.tasks.is_empty()
+    }
+
+    pub(crate) fn set_tasks(&mut self, tasks: Vec<String>) {
+        self.tasks = tasks;
+        self.press = None;
+    }
+
+    pub(crate) fn press_task(&mut self, task: usize) {
+        if task < self.tasks.len() {
+            self.press = Some((task, true));
+        }
+    }
+
+    pub(crate) fn drag_task(&mut self, inside: bool) {
+        if let Some((_, pressing)) = &mut self.press {
+            *pressing = inside;
+        }
+    }
+
+    pub(crate) fn release_task(&mut self, inside: bool) -> Option<usize> {
+        let (task, _) = self.press.take().filter(|_| inside)?;
+        self.tasks.remove(task);
+        Some(task)
     }
 
     pub(crate) fn field(&self) -> &TextField {
@@ -74,6 +148,10 @@ impl Prompt {
 
     pub(crate) fn request_focus(&mut self) {
         self.wants_focus = true;
+    }
+
+    pub(crate) fn leave_focus(&mut self) {
+        self.wants_focus = false;
     }
 
     pub(crate) fn focus(&mut self, now: Instant) {

@@ -50,6 +50,7 @@ impl<'a> Content<'a> {
     fn text(self) -> &'a str {
         match self {
             Content::Message(text) | Content::Notice { text, .. } => text,
+            Content::Prompt { prompt, .. } if prompt.has_tasks() => "",
             Content::Prompt { prompt, .. } => prompt.question(),
             Content::Checklist { title, .. } => title,
         }
@@ -63,8 +64,9 @@ impl<'a> Content<'a> {
             Content::Notice {
                 tasks, checkbox, ..
             } => listed(tasks).chain(checkbox).collect(),
+            Content::Prompt { prompt, .. } => prompt.tasks().collect(),
             Content::Checklist { items, .. } => listed(items).collect(),
-            Content::Message(_) | Content::Prompt { .. } => Vec::new(),
+            Content::Message(_) => Vec::new(),
         }
     }
 
@@ -75,6 +77,9 @@ impl<'a> Content<'a> {
                 tasks,
                 checkbox: Some(_),
             } if !text.is_empty() || !tasks.is_empty() => Some(tasks.len()),
+            Content::Prompt { prompt, .. } if prompt.has_tasks() && prompt.shows_field() => {
+                Some(prompt.tasks().count())
+            }
             _ => None,
         }
     }

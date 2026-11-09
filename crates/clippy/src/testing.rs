@@ -228,7 +228,49 @@ impl Harness {
         self.plugins.double_click(&mut self.character, self.moment);
     }
 
+    pub fn asked_tasks(&self) -> Vec<String> {
+        self.plugins
+            .prompt()
+            .map(|prompt| prompt.tasks().map(|(label, _)| label.to_owned()).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn tick_asked_task(&mut self, label: &str) {
+        let task = self
+            .asked_tasks()
+            .iter()
+            .position(|task| task == label)
+            .unwrap_or_else(|| panic!("the question should list a task {label:?}"));
+        self.plugins.press_asked_task(task);
+        self.plugins
+            .release_asked_task(true, &mut self.character, self.moment);
+    }
+
+    pub fn type_in(&mut self, text: &str) {
+        let prompt = self
+            .plugins
+            .prompt_mut()
+            .expect("there should be a question to type in");
+        prompt.edit(Edit::Insert(text.to_owned()), self.moment.instant);
+    }
+
     pub fn answer(&mut self, text: &str) {
+        self.submit(text, false);
+    }
+
+    pub fn shift_answer(&mut self, text: &str) {
+        self.submit(text, true);
+    }
+
+    pub fn copied(&mut self) -> Vec<String> {
+        self.plugins.take_copies()
+    }
+
+    pub fn cancel(&mut self) {
+        self.plugins.dismiss();
+    }
+
+    fn submit(&mut self, text: &str, shift: bool) {
         let prompt = self
             .plugins
             .prompt_mut()
@@ -236,11 +278,7 @@ impl Harness {
         prompt.edit(Edit::SelectAll, self.moment.instant);
         prompt.edit(Edit::Delete(Motion::Backward), self.moment.instant);
         prompt.edit(Edit::Insert(text.to_owned()), self.moment.instant);
-        self.plugins.submit(&mut self.character, self.moment);
-    }
-
-    pub fn cancel(&mut self) {
-        self.plugins.dismiss();
+        self.plugins.submit(shift, &mut self.character, self.moment);
     }
 
     fn due(&self) -> Vec<Due> {

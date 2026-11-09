@@ -29,6 +29,9 @@ use crate::storage::{Storage, StorageError};
 pub(crate) struct Asked {
     pub(crate) question: String,
     pub(crate) draft: String,
+    pub(crate) tasks: Vec<String>,
+    pub(crate) standing: bool,
+    pub(crate) shortcut: Option<Shortcut>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -85,8 +88,20 @@ pub(crate) trait AnyPlugin {
 
     fn double_click(&mut self, character: &mut Character, now: DateTime) -> Option<Asked>;
 
-    fn answer(&mut self, answer: String, character: &mut Character, now: DateTime)
-    -> Option<Asked>;
+    fn answer(
+        &mut self,
+        answer: String,
+        shift: bool,
+        character: &mut Character,
+        now: DateTime,
+    ) -> Option<Asked>;
+
+    fn tick_asked_task(
+        &mut self,
+        task: usize,
+        character: &mut Character,
+        now: DateTime,
+    ) -> Option<Asked>;
 
     fn snooze(&mut self, id: &str, character: &mut Character, now: DateTime) -> Option<Asked>;
 
@@ -106,6 +121,10 @@ pub(crate) trait AnyPlugin {
 
     fn take_copied(&mut self) -> Option<String>;
 
+    fn show_question(&mut self, shown: bool);
+
+    fn take_field_toggle(&mut self) -> bool;
+
     fn dismiss(&mut self);
 
     fn refresh(&mut self, storage: &Storage);
@@ -118,9 +137,18 @@ pub(crate) struct Installed<P: Plugin> {
     settings: P::Settings,
     agenda: Agenda,
     on_answer: Option<Box<dyn FnOnce(String) -> P::Action>>,
-    toggles_checklist: bool,
-    copied: Option<String>,
+    on_shift_answer: Option<Box<dyn FnOnce(String) -> P::Action>>,
+    on_tick: Vec<P::Action>,
+    question_shown: bool,
+    requests: Requests,
     unsaved: bool,
+}
+
+#[derive(Default)]
+struct Requests {
+    toggles_checklist: bool,
+    toggles_field: bool,
+    copied: Option<String>,
 }
 
 impl<P: Plugin> Installed<P> {
@@ -130,8 +158,10 @@ impl<P: Plugin> Installed<P> {
             settings,
             agenda: Agenda::default(),
             on_answer: None,
-            toggles_checklist: false,
-            copied: None,
+            on_shift_answer: None,
+            on_tick: Vec::new(),
+            question_shown: false,
+            requests: Requests::default(),
             unsaved: false,
         }
     }
@@ -158,20 +188,36 @@ impl<P: Plugin> Installed<P> {
     ) -> Option<Asked> {
         let mut cx = Context {
             character,
+            settings: &self.settings,
             question: None,
+            question_shown: self.question_shown,
+            toggles_field: false,
             toggles_checklist: false,
             copied: None,
             now,
         };
         self.plugin.perform(action, &mut cx);
         self.unsaved = true;
-        self.toggles_checklist = cx.toggles_checklist;
-        self.copied = cx.copied.or(self.copied.take());
+        self.requests = Requests {
+            toggles_checklist: cx.toggles_checklist,
+            toggles_field: cx.toggles_field,
+            copied: cx.copied.or(self.requests.copied.take()),
+        };
         let question = cx.question?;
         self.on_answer = Some(question.answer);
+        self.on_shift_answer = question.shift_answer;
+        let (tasks, on_tick) = question
+            .tasks
+            .into_iter()
+            .map(|(label, on_tick)| (FONT.printable(&label).into_owned(), on_tick))
+            .unzip();
+        self.on_tick = on_tick;
         Some(Asked {
             question: question.text,
             draft: question.draft,
+            tasks,
+            standing: question.standing,
+            shortcut: question.shortcut,
         })
     }
 
@@ -306,11 +352,28 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
     fn answer(
         &mut self,
         answer: String,
+        shift: bool,
         character: &mut Character,
         now: DateTime,
     ) -> Option<Asked> {
         let on_answer = self.on_answer.take()?;
+        let on_shift_answer = self.on_shift_answer.take();
+        self.on_tick.clear();
+        let on_answer = on_shift_answer.filter(|_| shift).unwrap_or(on_answer);
         self.perform(on_answer(answer), character, now)
+    }
+
+    fn tick_asked_task(
+        &mut self,
+        task: usize,
+        character: &mut Character,
+        now: DateTime,
+    ) -> Option<Asked> {
+        if task >= self.on_tick.len() {
+            return None;
+        }
+        let on_tick = self.on_tick.remove(task);
+        self.perform(on_tick, character, now)
     }
 
     fn snooze(&mut self, id: &str, character: &mut Character, now: DateTime) -> Option<Asked> {
@@ -345,15 +408,25 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
     }
 
     fn take_checklist_toggle(&mut self) -> bool {
-        mem::take(&mut self.toggles_checklist)
+        mem::take(&mut self.requests.toggles_checklist)
     }
 
     fn take_copied(&mut self) -> Option<String> {
-        self.copied.take()
+        self.requests.copied.take()
+    }
+
+    fn show_question(&mut self, shown: bool) {
+        self.question_shown = shown;
+    }
+
+    fn take_field_toggle(&mut self) -> bool {
+        mem::take(&mut self.requests.toggles_field)
     }
 
     fn dismiss(&mut self) {
         self.on_answer = None;
+        self.on_shift_answer = None;
+        self.on_tick.clear();
     }
 
     fn refresh(&mut self, storage: &Storage) {

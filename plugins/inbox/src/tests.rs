@@ -163,6 +163,15 @@ fn writes_and_reads_its_settings() {
 }
 
 #[test]
+fn shift_enter_files_the_answer_like_enter() {
+    let mut inbox = Harness::new(Inbox::default());
+    inbox.choose(ADD);
+    inbox.shift_answer("Call the bank");
+    assert_eq!(inbox.question(), None);
+    assert_eq!(inbox.menu()[1], (EXPORT.to_owned(), true));
+}
+
+#[test]
 fn exporting_copies_everything_and_empties_the_inbox() {
     let directory = TempDir::new().unwrap();
     let mut app = launch(&directory);

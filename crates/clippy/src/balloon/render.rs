@@ -333,6 +333,100 @@ mod tests {
         assert_eq!(box_alone.separator(Placement::TopLeft), None);
     }
 
+    fn listing(tasks: &[&str]) -> Prompt {
+        let mut prompt = prompt("");
+        prompt.set_tasks(tasks.iter().map(|&task| task.to_owned()).collect());
+        prompt
+    }
+
+    #[test]
+    fn a_line_sets_the_field_apart_from_the_tasks_above_it() {
+        let prompt = listing(&["Post the letter", "Buy bread"]);
+        let placement = Placement::TopLeft;
+        let layout = Layout::new(Content::Prompt {
+            prompt: &prompt,
+            focused: true,
+        });
+        let (left, top) = layout.text_origin(placement);
+        assert_eq!(layout.lines, Vec::<Range<usize>>::new());
+        let rows = layout.checkboxes(placement);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].y, top);
+        assert_eq!(rows[1].y, rows[0].bottom() + 4);
+        let line = layout.separator(placement).unwrap();
+        let field = layout.field(placement).unwrap();
+        assert_eq!(line.y, rows[1].bottom() + 8);
+        assert_eq!(field.y, line.bottom() + 8);
+        assert_eq!((line.x, line.width), (left, field.width));
+        let canvas = layout.render(placement);
+        for x in line.x..line.right() {
+            assert_eq!(canvas.pixel(x, line.y), separator_color());
+        }
+        assert_eq!(canvas.pixel(rows[0].x + 2, rows[0].y + 2), WHITE);
+    }
+
+    #[test]
+    fn a_list_without_its_field_drops_the_line_too() {
+        let mut prompt = listing(&["Post the letter", "Buy bread"]);
+        let placement = Placement::TopLeft;
+        let with_field = Layout::new(Content::Prompt {
+            prompt: &prompt,
+            focused: true,
+        })
+        .size();
+        prompt.show_field(false);
+        let layout = Layout::new(Content::Prompt {
+            prompt: &prompt,
+            focused: true,
+        });
+        assert_eq!(layout.field(placement), None);
+        assert_eq!(layout.separator(placement), None);
+        let rows = layout.checkboxes(placement);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(layout.size().width, with_field.width);
+        assert_eq!(
+            layout.size().height,
+            with_field.height - (8 + 1 + 8 + 21),
+            "the balloon ends right under the last task"
+        );
+    }
+
+    #[test]
+    fn a_field_with_nothing_above_it_asks_its_question_without_a_line() {
+        let prompt = listing(&[]);
+        let placement = Placement::TopLeft;
+        let layout = Layout::new(Content::Prompt {
+            prompt: &prompt,
+            focused: true,
+        });
+        let (_, top) = layout.text_origin(placement);
+        assert_eq!(layout.separator(placement), None);
+        assert_eq!(layout.checkboxes(placement), Vec::<Rect>::new());
+        assert_eq!(layout.field(placement).unwrap().y, top + LINE_HEIGHT + 6);
+    }
+
+    #[test]
+    fn a_pressed_task_shows_its_box_pushed_in_and_leaves_once_released() {
+        let mut prompt = listing(&["Post the letter", "Buy bread"]);
+        prompt.press_task(1);
+        let layout = Layout::new(Content::Prompt {
+            prompt: &prompt,
+            focused: true,
+        });
+        let placement = Placement::TopLeft;
+        let rows = layout.checkboxes(placement);
+        let canvas = layout.render(placement);
+        assert_eq!(canvas.pixel(rows[0].x + 2, rows[0].y + 2), WHITE);
+        assert_ne!(canvas.pixel(rows[1].x + 2, rows[1].y + 2), WHITE);
+        prompt.drag_task(false);
+        assert_eq!(prompt.release_task(false), None);
+        assert_eq!(prompt.tasks().count(), 2);
+        prompt.press_task(0);
+        assert_eq!(prompt.release_task(true), Some(0));
+        let left: Vec<&str> = prompt.tasks().map(|(task, _)| task).collect();
+        assert_eq!(left, ["Buy bread"]);
+    }
+
     fn text_line(field: Rect) -> Rect {
         let visible = lane(field);
         let left = field.x + FIELD_INSET;

@@ -277,6 +277,7 @@ dependencies = [
  "clippy-inbox",
  "clippy-reminders",
  "clippy-sleepy",
+ "clippy-todo",
  "dispatch2",
  "env_logger",
  "global-hotkey",
@@ -311,6 +312,18 @@ dependencies = [
  "clippy",
  "jiff",
  "serde",
+ "toml",
+]
+
+[[package]]
+name = "clippy-todo"
+version = "0.1.5"
+dependencies = [
+ "clippy",
+ "jiff",
+ "serde",
+ "serde_json",
+ "tempfile",
  "toml",
 ]
 

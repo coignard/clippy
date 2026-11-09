@@ -11,9 +11,9 @@ use tempfile::TempDir;
 
 use super::*;
 use crate::assets::ANIMATIONS;
-use crate::balloon::{Checkbox, Motion};
+use crate::balloon::{Checkbox, Motion, Prompt};
 use crate::calendar::Appointment;
-use crate::character::Look;
+use crate::character::{FieldState, Look};
 use crate::plugin::{
     Checklist, Context, MenuItem, Message, NoSettings, Notice, Plugin, Question, Urgency,
 };
@@ -148,6 +148,55 @@ impl Plugin for Packing {
                 }
             }
         }
+    }
+}
+
+const LIST: Shortcut = Shortcut {
+    modifiers: Modifiers::COMMAND.union(Modifiers::SHIFT),
+    key: Key::L,
+};
+
+#[derive(Default, Serialize, Deserialize)]
+struct Todos {
+    left: Vec<String>,
+}
+
+enum TodoAction {
+    Show,
+    Add(String),
+    Done(String),
+}
+
+impl Todos {
+    fn question(&self) -> Question<TodoAction> {
+        self.left.iter().fold(
+            Question::new("What's the plan?", TodoAction::Add)
+                .shortcut(ERASE)
+                .standing(),
+            |question, task| question.task(task, TodoAction::Done(task.clone())),
+        )
+    }
+}
+
+impl Plugin for Todos {
+    const NAME: &'static str = "Todos";
+
+    type Action = TodoAction;
+
+    type Settings = NoSettings;
+
+    fn menu(&self, _: &NoSettings, _: DateTime) -> Vec<MenuItem<TodoAction>> {
+        vec![MenuItem::new("List", TodoAction::Show).shortcut(LIST)]
+    }
+
+    fn perform(&mut self, action: TodoAction, cx: &mut Context<'_, Self>) {
+        match action {
+            TodoAction::Show => return cx.toggle_question(self.question()),
+            TodoAction::Add(task) if task.is_empty() => return,
+            TodoAction::Add(task) => self.left.push(task),
+            TodoAction::Done(task) => self.left.retain(|left| *left != task),
+        }
+        cx.ask(self.question());
     }
 }
 
@@ -735,6 +784,22 @@ fn with_packing(directory: &TempDir, settings: Settings) -> (App, Instant) {
         .build(settings, Storage::new(directory.path()));
     app.place(CLIPPY, SCREEN);
     start(app)
+}
+
+fn with_todos(directory: &TempDir, settings: Settings) -> (App, Instant) {
+    fastrand::seed(7);
+    let mut app = App::builder()
+        .plugin::<Todos>()
+        .build(settings, Storage::new(directory.path()));
+    app.place(CLIPPY, SCREEN);
+    start(app)
+}
+
+fn todos(app: &App) -> Option<Vec<&str>> {
+    match app.balloon(None)? {
+        Content::Prompt { prompt, .. } => Some(prompt.tasks().map(|(task, _)| task).collect()),
+        _ => None,
+    }
 }
 
 fn notice(app: &App) -> Option<(&str, Checkbox)> {
@@ -2420,4 +2485,205 @@ fn reminders_keep_their_hour_when_the_clocks_spring_forward() {
     let now = settle(&mut app, now, noticed);
     assert_eq!(now - day.origin, Duration::from_hours(8));
     assert_eq!(notice(&app), Some((STRETCH, UNTICKED)));
+}
+
+fn with_listed_todos(directory: &TempDir, settings: Settings) -> (App, Instant) {
+    let (mut app, now) = with_todos(directory, settings);
+    app.handle(Event::Shortcut(LIST), now);
+    app.handle(Event::Focus, now);
+    answer(&mut app, "Buy milk", now);
+    answer(&mut app, "Call the bank", now);
+    edit(&mut app, Edit::Insert("Pay the".into()), now);
+    (app, now)
+}
+
+#[test]
+fn the_list_shortcut_hides_and_brings_back_the_field_under_a_shown_list() {
+    let directory = TempDir::new().unwrap();
+    let settings = Settings {
+        after_summons: AfterSummons::Hide,
+        ..Settings::default()
+    };
+    let (mut app, now) = with_todos(&directory, settings);
+    app.handle(Event::Command(Command::Hide), now);
+    let now = settle(&mut app, now, is_absent);
+    app.handle(Event::Shortcut(LIST), now);
+    let now = settle(&mut app, now, App::is_present);
+    assert!(field(&app).unwrap().wants_focus);
+    app.handle(Event::Focus, now);
+    answer(&mut app, "Buy milk", now);
+    edit(&mut app, Edit::Insert("Pay the".into()), now);
+    app.handle(Event::Shortcut(LIST), now);
+    assert_eq!(field(&app), None);
+    assert_eq!(todos(&app), Some(vec!["Buy milk"]));
+    assert_eq!(app.field_state(), FieldState::Closed);
+    app.handle(Event::Blur, now);
+    let later = now + Duration::from_secs(60);
+    app.handle(Event::Tick, later);
+    assert!(app.is_present());
+    app.handle(Event::Shortcut(LIST), later);
+    assert!(field(&app).unwrap().wants_focus);
+    assert_eq!(draft(&app), Some("Pay the"));
+    app.handle(Event::Focus, later);
+    app.handle(Event::Shortcut(LIST), later);
+    app.handle(Event::Blur, later);
+    app.handle(Event::Shortcut(LIST), later);
+    assert!(field(&app).unwrap().wants_focus);
+}
+
+#[test]
+fn a_list_without_its_field_ignores_the_keyboard() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_listed_todos(&directory, Settings::default());
+    app.handle(Event::Shortcut(LIST), now);
+    edit(&mut app, Edit::Insert("lost".into()), now);
+    app.handle(Event::Submit, now);
+    app.handle(Event::ShiftSubmit, now);
+    assert_eq!(todos(&app), Some(vec!["Buy milk", "Call the bank"]));
+    app.handle(Event::Shortcut(LIST), now);
+    assert_eq!(draft(&app), Some("Pay the"));
+}
+
+#[test]
+fn ticking_tasks_off_a_list_without_its_field_keeps_it_hidden_until_the_list_runs_out() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_listed_todos(&directory, Settings::default());
+    app.handle(Event::Shortcut(LIST), now);
+    app.handle(Event::CheckboxPress { item: 0 }, now);
+    app.handle(Event::CheckboxRelease { inside: true }, now);
+    assert_eq!(todos(&app), Some(vec!["Call the bank"]));
+    assert_eq!(field(&app), None);
+    app.handle(Event::CheckboxPress { item: 0 }, now);
+    app.handle(Event::CheckboxRelease { inside: true }, now);
+    assert_eq!(app.plugins.prompt().map(Prompt::question), None);
+}
+
+#[test]
+fn double_clicking_a_list_without_its_field_puts_it_away() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_listed_todos(&directory, Settings::default());
+    app.handle(Event::MessageDoubleClick, now);
+    assert_eq!(todos(&app), Some(vec!["Buy milk", "Call the bank"]));
+    app.handle(Event::Shortcut(LIST), now);
+    app.handle(Event::MessageDoubleClick, now);
+    assert_eq!(app.plugins.prompt().map(Prompt::question), None);
+}
+
+#[test]
+fn hiding_the_field_of_an_empty_list_puts_the_list_away() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_todos(&directory, Settings::default());
+    app.handle(Event::Shortcut(LIST), now);
+    app.handle(Event::Shortcut(LIST), now);
+    assert_eq!(app.plugins.prompt().map(Prompt::question), None);
+}
+
+#[test]
+fn a_list_that_left_with_clippy_comes_back_with_its_field_on_the_shortcut() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_listed_todos(&directory, Settings::default());
+    app.handle(Event::Shortcut(LIST), now);
+    app.handle(Event::Blur, now);
+    app.handle(Event::Command(Command::Toggle), now);
+    let now = settle(&mut app, now, is_absent);
+    app.handle(Event::Shortcut(LIST), now);
+    settle(&mut app, now, App::is_present);
+    assert_eq!(todos(&app), Some(vec!["Buy milk", "Call the bank"]));
+    assert!(field(&app).unwrap().wants_focus);
+    assert_eq!(draft(&app), Some("Pay the"));
+}
+
+#[test]
+fn a_list_comes_back_with_clippy_after_he_hides() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_todos(&directory, Settings::default());
+    app.handle(Event::Shortcut(LIST), now);
+    answer(&mut app, "Buy milk", now);
+    edit(&mut app, Edit::Insert("Call the".into()), now);
+    app.handle(Event::Command(Command::Toggle), now);
+    let now = settle(&mut app, now, is_absent);
+    assert!(app.scene().balloon.is_none());
+    app.handle(Event::Command(Command::Toggle), now);
+    settle(&mut app, now, App::is_present);
+    assert_eq!(todos(&app), Some(vec!["Buy milk"]));
+    assert_eq!(draft(&app), Some("Call the"));
+}
+
+#[test]
+fn clippy_leaves_a_list_be_until_you_type_in_it() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_todos(&directory, Settings::default());
+    app.handle(Event::Shortcut(LIST), now);
+    answer(&mut app, "Buy milk", now);
+    let later = now + Duration::from_secs(5);
+    app.handle(Event::Tick, later);
+    assert_eq!(app.character.look(), None);
+    assert_eq!(app.field_state(), FieldState::Closed);
+    app.handle(Event::Focus, later);
+    assert_eq!(app.field_state(), FieldState::Focused);
+}
+
+#[test]
+fn ticking_a_task_off_a_list_leaves_the_keyboard_alone() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_todos(&directory, Settings::default());
+    app.handle(Event::Shortcut(LIST), now);
+    answer(&mut app, "Buy milk", now);
+    answer(&mut app, "Call the bank", now);
+    app.handle(Event::Focus, now);
+    app.handle(Event::Blur, now);
+    assert!(!field(&app).unwrap().wants_focus);
+    app.handle(Event::CheckboxPress { item: 0 }, now);
+    app.handle(Event::CheckboxRelease { inside: true }, now);
+    assert_eq!(todos(&app), Some(vec!["Call the bank"]));
+    assert!(!field(&app).unwrap().wants_focus);
+}
+
+#[test]
+fn the_shortcut_brings_a_list_out_from_under_a_notice() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(9, 59);
+    let settings = Settings {
+        plugins: enabling(&["Chores", "Todos"]).plugins,
+        ..Settings::default()
+    };
+    let mut app = App::builder()
+        .plugin::<Chores>()
+        .plugin::<Todos>()
+        .clock(day.clock())
+        .build(settings, Storage::new(directory.path()));
+    app.place(CLIPPY, SCREEN);
+    app.handle(Event::Launch, day.origin);
+    let now = settle(&mut app, day.origin, App::is_present);
+    app.handle(Event::Shortcut(LIST), now);
+    answer(&mut app, "Buy milk", now);
+    let now = settle(&mut app, now, noticed);
+    assert_eq!(notice(&app).map(|(text, _)| text), Some(STRETCH));
+    app.handle(Event::Shortcut(LIST), now);
+    assert_eq!(todos(&app), Some(vec!["Buy milk"]));
+}
+
+#[test]
+fn a_list_hides_on_its_own_shortcut_before_any_menu_item_gets_it() {
+    let directory = TempDir::new().unwrap();
+    let mut app = App::builder()
+        .plugin::<Note>()
+        .plugin::<Todos>()
+        .build(enabling(&["Note", "Todos"]), Storage::new(directory.path()));
+    app.place(CLIPPY, SCREEN);
+    let (mut app, now) = start(app);
+    assert!(!app.shortcuts(now).contains(&ERASE));
+    app.handle(Event::Shortcut(LIST), now);
+    assert!(app.shortcuts(now).contains(&ERASE));
+    answer(&mut app, "Buy milk", now);
+    app.handle(Event::Shortcut(LIST), now);
+    choose(&mut app, "Write...", now);
+    answer(&mut app, "Focus", now);
+    app.handle(Event::Shortcut(LIST), now);
+    assert_eq!(todos(&app), Some(vec!["Buy milk"]));
+    app.handle(Event::Shortcut(ERASE), now);
+    assert_eq!(app.plugins.prompt().map(Prompt::question), None);
+    assert_eq!(shown(&app).as_deref(), Some("Focus"));
+    app.handle(Event::Shortcut(ERASE), now);
+    assert_eq!(shown(&app), None);
 }

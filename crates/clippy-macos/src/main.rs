@@ -39,6 +39,7 @@ use clippy_habits::Habits;
 use clippy_inbox::Inbox;
 use clippy_reminders::Reminders;
 use clippy_sleepy::Sleepy;
+use clippy_todo::Todo;
 use objc2::MainThreadMarker;
 use objc2::runtime::ProtocolObject;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
@@ -60,6 +61,7 @@ fn main() {
         .plugin::<Focus>()
         .plugin::<Habits>()
         .plugin::<Inbox>()
+        .plugin::<Todo>()
         .plugin::<Reminders>()
         .plugin::<Sleepy>()
         .clock(|_| clock::now())

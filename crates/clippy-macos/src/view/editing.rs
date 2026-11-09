@@ -42,9 +42,10 @@ const ANSI_LETTERS: [(u16, char); 5] = [
     (0x06, 'z'),
 ];
 
-pub(super) fn command(selector: Sel) -> Option<Event> {
+pub(super) fn command(selector: Sel, shift: bool) -> Option<Event> {
     let name = selector.name().to_bytes();
     match name {
+        b"insertNewline:" | b"insertLineBreak:" if shift => Some(Event::ShiftSubmit),
         b"insertNewline:" | b"insertLineBreak:" => Some(Event::Submit),
         b"cancelOperation:" => Some(Event::Cancel),
         _ => edit(name).map(Event::Edit),

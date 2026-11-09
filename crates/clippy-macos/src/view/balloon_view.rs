@@ -82,6 +82,12 @@ define_class!(
         #[unsafe(method(insertText:replacementRange:))]
         fn insert_text(&self, text: &AnyObject, replacement: NSRange) {
             let text = plain(text);
+            if matches!(text.as_str(), "\r" | "\n") {
+                if let Some(event) = editing::command(sel!(insertNewline:), self.holds_shift()) {
+                    self.send(event);
+                }
+                return;
+            }
             let range = utf16(replacement).or_else(|| self.ivars().marked.take());
             self.ivars().marked.set(None);
             match range {
@@ -93,7 +99,7 @@ define_class!(
 
         #[unsafe(method(doCommandBySelector:))]
         fn do_command_by_selector(&self, selector: Sel) {
-            if let Some(event) = editing::command(selector) {
+            if let Some(event) = editing::command(selector, self.holds_shift()) {
                 self.send(event);
             }
         }
@@ -409,6 +415,12 @@ impl BalloonView {
             TextAction::Redo => Edit::Redo,
         };
         self.send(Event::Edit(edit));
+    }
+
+    fn holds_shift(&self) -> bool {
+        NSApplication::sharedApplication(self.mtm())
+            .currentEvent()
+            .is_some_and(|event| event.modifierFlags().contains(NSEventModifierFlags::Shift))
     }
 
     fn discard_marked_text(&self) {
