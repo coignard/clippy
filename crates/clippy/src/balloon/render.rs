@@ -26,7 +26,7 @@ use crate::balloon::layout::{
 use crate::balloon::{Content, Placement, Prompt};
 use crate::character::Character;
 use crate::geometry::{Rect, Size};
-use crate::graphics::{BLACK, Canvas, HIGHLIGHT, WHITE};
+use crate::graphics::{BLACK, Canvas, Color, HIGHLIGHT, WHITE};
 
 const TIP_POINTING_DOWN: i32 = 0;
 const TIP_POINTING_UP: i32 = TIP.height;
@@ -41,6 +41,9 @@ impl Layout<'_> {
         draw_tip(&mut canvas, body, placement);
         let (left, top) = self.text_origin(placement);
         draw_lines(&mut canvas, self.content.text(), &self.lines, left, top);
+        if let Some(separator) = self.separator(placement) {
+            canvas.fill(separator, separator_color());
+        }
         if let Content::Prompt { prompt, focused } = self.content
             && let Some(area) = self.field(placement)
         {
@@ -66,6 +69,12 @@ fn draw_lines(canvas: &mut Canvas, text: &str, lines: &[Range<usize>], left: i32
             CLIPPIT.balloon.text,
         );
     }
+}
+
+fn separator_color() -> Color {
+    let [red, green, blue, alpha] = CLIPPIT.balloon.fill;
+    let shade = |channel: u8| u8::try_from(u16::from(channel) * 7 / 10).unwrap_or(channel);
+    [shade(red), shade(green), shade(blue), alpha]
 }
 
 fn draw_tip(canvas: &mut Canvas, body: Rect, placement: Placement) {
@@ -139,7 +148,7 @@ mod tests {
 
     use super::*;
     use crate::balloon::layout::TIP_REACH;
-    use crate::balloon::{Edit, Motion};
+    use crate::balloon::{Checkbox, Edit, Motion};
     use crate::graphics::{Bitmap, TRANSPARENT};
 
     fn prompt(text: &str) -> Prompt {
@@ -240,6 +249,88 @@ mod tests {
             let alphas = canvas.rgba().iter().skip(3).step_by(4);
             assert!(alphas.copied().all(|alpha| alpha == 0 || alpha == 255));
         }
+    }
+
+    const AGAIN: &str = "Don't show me this reminder again";
+
+    fn notice<'a>(text: &'a str, tasks: &'a [(String, Checkbox)]) -> Layout<'a> {
+        Layout::new(Content::Notice {
+            text,
+            tasks,
+            checkbox: Some((AGAIN, Checkbox::default())),
+        })
+    }
+
+    fn errands() -> Vec<(String, Checkbox)> {
+        ["Post the letter", "Buy bread"]
+            .into_iter()
+            .map(|task| (task.to_owned(), Checkbox::default()))
+            .collect()
+    }
+
+    #[test]
+    fn a_line_sets_the_box_at_the_bottom_apart_like_in_office() {
+        let tasks = errands();
+        let placement = Placement::TopLeft;
+        for (text, tasks) in [("Stretch!", &[][..]), ("Errands:", &tasks), ("", &tasks)] {
+            let layout = notice(text, tasks);
+            let (left, top) = layout.text_origin(placement);
+            let rows = layout.checkboxes(placement);
+            let (bottom, tasks) = rows.split_last().unwrap();
+            let line = layout.separator(placement).unwrap();
+            let above = tasks.last().map_or(top + LINE_HEIGHT, |task| task.bottom());
+            assert_eq!(line.y, above + 8, "{text:?}");
+            assert_eq!(bottom.y, line.bottom() + 8, "{text:?}");
+            assert_eq!((line.x, line.width, line.height), (left, bottom.width, 1));
+            let canvas = layout.render(placement);
+            for x in line.x..line.right() {
+                assert_eq!(canvas.pixel(x, line.y), separator_color());
+                assert_eq!(canvas.pixel(x, line.y - 1), CLIPPIT.balloon.fill);
+                assert_eq!(canvas.pixel(x, line.y + 1), CLIPPIT.balloon.fill);
+            }
+        }
+    }
+
+    #[test]
+    fn tasks_without_text_start_right_at_the_top() {
+        let tasks = errands();
+        let layout = notice("", &tasks);
+        let (_, top) = layout.text_origin(Placement::TopLeft);
+        assert_eq!(layout.lines, Vec::<Range<usize>>::new());
+        assert_eq!(layout.checkboxes(Placement::TopLeft)[0].y, top);
+        let with_text = notice("Errands:", &tasks);
+        assert_eq!(
+            with_text.checkboxes(Placement::TopLeft)[0].y,
+            top + LINE_HEIGHT + 6
+        );
+    }
+
+    #[test]
+    fn the_line_is_the_balloon_seven_tenths_as_bright() {
+        assert_eq!(CLIPPIT.balloon.fill, [0xFF, 0xFF, 0xE1, 0xFF]);
+        assert_eq!(separator_color(), [178, 178, 157, 0xFF]);
+    }
+
+    #[test]
+    fn only_a_box_at_the_bottom_gets_a_line() {
+        let tasks = errands();
+        let without_box = Layout::new(Content::Notice {
+            text: "Errands:",
+            tasks: &tasks,
+            checkbox: None,
+        });
+        assert_eq!(without_box.separator(Placement::TopLeft), None);
+        let checklist = Layout::new(Content::Checklist {
+            title: "Pack:",
+            items: &tasks,
+        });
+        assert_eq!(checklist.separator(Placement::TopLeft), None);
+        let box_alone = Layout::new(Content::Notice {
+            text: "",
+            tasks: &[],
+            checkbox: Some((AGAIN, Checkbox::default())),
+        });
+        assert_eq!(box_alone.separator(Placement::TopLeft), None);
     }
 
     fn text_line(field: Rect) -> Rect {

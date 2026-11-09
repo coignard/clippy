@@ -25,9 +25,10 @@ use crate::shortcut::Shortcut;
 pub(super) struct Board {
     due: Vec<Due>,
     shown: Option<Due>,
-    press: Option<bool>,
+    press: Option<(usize, bool)>,
     ticked: Option<Due>,
     displayed: bool,
+    tasks: Vec<(String, Checkbox)>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -36,11 +37,19 @@ pub(super) struct Change {
     pub(super) vanished: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum Released {
+    Checked(Due),
+    Toggled(Due, usize),
+}
+
 impl Board {
     pub(super) fn interrupt(&mut self) -> Option<Due> {
         self.press = None;
         self.ticked = None;
-        self.shown.take()
+        let shown = self.shown.take();
+        self.refresh();
+        shown
     }
 
     pub(super) fn is_displayed(&self) -> bool {
@@ -65,33 +74,62 @@ impl Board {
         self.ticked.as_ref()
     }
 
-    pub(super) fn press(&mut self) {
-        let checkable = self
-            .shown
-            .as_ref()
-            .is_some_and(|due| due.notice.checkbox.is_some());
-        if checkable {
-            self.press = Some(true);
+    pub(super) fn press(&mut self, item: usize) {
+        let rows = self.shown.as_ref().map_or(0, |due| {
+            due.notice.tasks.len() + usize::from(due.notice.checkbox.is_some())
+        });
+        if item < rows {
+            self.press = Some((item, true));
         }
+        self.refresh();
     }
 
     pub(super) fn drag(&mut self, inside: bool) {
-        if let Some(press) = &mut self.press {
-            *press = inside;
+        if let Some((_, pressed)) = &mut self.press {
+            *pressed = inside;
         }
+        self.refresh();
     }
 
-    pub(super) fn release(&mut self, inside: bool) -> Option<Due> {
-        if self.press.take().is_none() || !inside {
-            return None;
-        }
-        self.tick()
+    pub(super) fn release(&mut self, inside: bool) -> Option<Released> {
+        let released = match (self.press.take(), self.shown.clone()) {
+            (Some((item, _)), Some(due)) if inside => {
+                let tasks = &due.notice.tasks;
+                let completes = tasks.get(item).is_some_and(|(_, done)| !done)
+                    && (0..tasks.len()).all(|other| other == item || tasks[other].1);
+                if item == tasks.len() {
+                    self.tick().map(Released::Checked)
+                } else if completes && due.notice.checkbox.is_some() {
+                    self.tick_with_every_task().map(Released::Checked)
+                } else {
+                    Some(Released::Toggled(due, item))
+                }
+            }
+            _ => None,
+        };
+        self.refresh();
+        released
     }
 
     pub(super) fn tick(&mut self) -> Option<Due> {
+        self.finish(false)
+    }
+
+    fn tick_with_every_task(&mut self) -> Option<Due> {
+        self.finish(true)
+    }
+
+    fn finish(&mut self, every_task: bool) -> Option<Due> {
         let due = self.shown.take_if(|due| due.notice.checkbox.is_some())?;
         self.press = None;
-        self.ticked = Some(due.clone());
+        let mut ticked = due.clone();
+        if every_task {
+            for (_, done) in &mut ticked.notice.tasks {
+                *done = true;
+            }
+        }
+        self.ticked = Some(ticked);
+        self.refresh();
         Some(due)
     }
 
@@ -137,34 +175,54 @@ impl Board {
             vanished: self.displayed && !displayed,
         };
         self.displayed = displayed;
+        self.refresh();
         change
     }
 
     pub(super) fn content(&self) -> Option<Content<'_>> {
-        let (due, checkbox) = match (&self.ticked, &self.shown) {
-            (Some(ticked), _) => (
-                ticked,
-                Checkbox {
-                    checked: true,
-                    pressed: false,
-                },
-            ),
-            (None, Some(shown)) => (
-                shown,
-                Checkbox {
-                    checked: false,
-                    pressed: self.press == Some(true),
-                },
-            ),
-            (None, None) => return None,
-        };
+        let (due, checked) = self.on_display()?;
+        let pressed = self.pressed() == Some(due.notice.tasks.len());
         Some(Content::Notice {
             text: &due.notice.text,
+            tasks: &self.tasks,
             checkbox: due
                 .notice
                 .checkbox
                 .as_deref()
-                .map(|label| (label, checkbox)),
+                .map(|label| (label, Checkbox { checked, pressed })),
         })
+    }
+
+    fn on_display(&self) -> Option<(&Due, bool)> {
+        match (&self.ticked, &self.shown) {
+            (Some(ticked), _) => Some((ticked, true)),
+            (None, Some(shown)) => Some((shown, false)),
+            (None, None) => None,
+        }
+    }
+
+    fn pressed(&self) -> Option<usize> {
+        self.press
+            .filter(|_| self.ticked.is_none())
+            .and_then(|(item, inside)| inside.then_some(item))
+    }
+
+    fn refresh(&mut self) {
+        let pressed = self.pressed();
+        self.tasks = self
+            .on_display()
+            .map(|(due, _)| {
+                (0..)
+                    .zip(&due.notice.tasks)
+                    .map(|(item, (label, done))| {
+                        let state = Checkbox {
+                            checked: *done,
+                            pressed: pressed == Some(item),
+                        };
+                        (label.clone(), state)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
     }
 }

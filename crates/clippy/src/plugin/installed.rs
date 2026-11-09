@@ -41,6 +41,7 @@ pub(crate) struct Listed {
 pub(crate) struct Noticed {
     pub(crate) id: String,
     pub(crate) text: String,
+    pub(crate) tasks: Vec<(String, bool)>,
     pub(crate) checkbox: Option<String>,
     pub(crate) over_full_screen: bool,
     pub(crate) shortcut: Option<Shortcut>,
@@ -90,6 +91,14 @@ pub(crate) trait AnyPlugin {
     fn snooze(&mut self, id: &str, character: &mut Character, now: DateTime) -> Option<Asked>;
 
     fn check(&mut self, id: &str, character: &mut Character, now: DateTime) -> Option<Asked>;
+
+    fn toggle_task(
+        &mut self,
+        id: &str,
+        task: usize,
+        character: &mut Character,
+        now: DateTime,
+    ) -> Option<Asked>;
 
     fn toggle(&mut self, item: usize, character: &mut Character, now: DateTime) -> Option<Asked>;
 
@@ -229,6 +238,11 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
             .map(|notice| Noticed {
                 id: notice.id,
                 text: FONT.printable(&notice.text).into_owned(),
+                tasks: notice
+                    .tasks
+                    .into_iter()
+                    .map(|task| (FONT.printable(&task.label).into_owned(), task.done))
+                    .collect(),
                 checkbox: notice
                     .checkbox
                     .map(|(label, _)| FONT.printable(&label).into_owned()),
@@ -301,6 +315,17 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
     fn check(&mut self, id: &str, character: &mut Character, now: DateTime) -> Option<Asked> {
         let (_, on_check) = self.notice(id, now)?.checkbox?;
         self.perform(on_check, character, now)
+    }
+
+    fn toggle_task(
+        &mut self,
+        id: &str,
+        task: usize,
+        character: &mut Character,
+        now: DateTime,
+    ) -> Option<Asked> {
+        let task = self.notice(id, now)?.tasks.into_iter().nth(task)?;
+        self.perform(task.on_toggle, character, now)
     }
 
     fn toggle(&mut self, item: usize, character: &mut Character, now: DateTime) -> Option<Asked> {

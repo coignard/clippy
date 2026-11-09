@@ -54,13 +54,19 @@ pub struct Reminders {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
     Snooze {
-        text: String,
+        key: String,
         occurrence: DateTime,
         until: DateTime,
     },
     Done {
-        text: String,
+        key: String,
         occurrence: DateTime,
+    },
+    Task {
+        key: String,
+        occurrence: DateTime,
+        task: String,
+        completes: bool,
     },
     Pause {
         until: DateTime,
@@ -69,7 +75,9 @@ pub enum Action {
 }
 
 struct Habit<'a> {
+    key: String,
     text: &'a str,
+    tasks: &'a [String],
     reminders: Vec<&'a Reminder>,
 }
 
@@ -91,7 +99,8 @@ impl Reminders {
         occurrence: DateTime,
         now: DateTime,
     ) -> Notice<Action> {
-        let snoozes = self.progress_of(habit).snoozes_of(occurrence);
+        let progress = self.progress_of(habit);
+        let snoozes = progress.snoozes_of(occurrence);
         let label = match self.next_showing(settings, habit, now) {
             Some(at) => format!(
                 "Don't show me this reminder until {}",
@@ -99,20 +108,37 @@ impl Reminders {
             ),
             None => "Don't show me this reminder again".to_owned(),
         };
-        let text = habit.text.to_owned();
-        Notice::new(
-            habit.text,
+        let key = habit.key.clone();
+        let mut notice = Notice::new(
+            habit.key.as_str(),
             habit.text,
             Action::Snooze {
-                text: text.clone(),
+                key: key.clone(),
                 occurrence,
                 until: now.saturating_add(settings.snooze.after(snoozes)),
             },
-        )
-        .checkbox(label, Action::Done { text, occurrence })
-        .over_full_screen(settings.show_in_full_screen)
-        .shortcut(settings.hide_shortcut)
-        .check_shortcut(settings.check_shortcut)
+        );
+        let ticked = |task: &str| progress.has_ticked(occurrence, task);
+        for task in habit.tasks {
+            let done = ticked(task);
+            let completes = !done
+                && habit
+                    .tasks
+                    .iter()
+                    .all(|other| other == task || ticked(other));
+            let toggle = Action::Task {
+                key: key.clone(),
+                occurrence,
+                task: task.clone(),
+                completes,
+            };
+            notice = notice.task(task.as_str(), done, toggle);
+        }
+        notice
+            .checkbox(label, Action::Done { key, occurrence })
+            .over_full_screen(settings.show_in_full_screen)
+            .shortcut(settings.hide_shortcut)
+            .check_shortcut(settings.check_shortcut)
     }
 
     fn next_showing(
@@ -136,7 +162,7 @@ impl Reminders {
     }
 
     fn progress_of(&self, habit: &Habit<'_>) -> Progress {
-        self.progress.get(habit.text).copied().unwrap_or_default()
+        self.progress.get(&habit.key).cloned().unwrap_or_default()
     }
 }
 
@@ -228,17 +254,30 @@ impl Plugin for Reminders {
         self.tidy(cx.now());
         match action {
             Action::Snooze {
-                text,
+                key,
                 occurrence,
                 until,
             } => {
                 self.progress
-                    .entry(text)
+                    .entry(key)
                     .or_default()
                     .snooze(occurrence, until);
             }
-            Action::Done { text, occurrence } => {
-                self.progress.entry(text).or_default().finish(occurrence);
+            Action::Done { key, occurrence } => {
+                self.progress.entry(key).or_default().finish(occurrence);
+            }
+            Action::Task {
+                key,
+                occurrence,
+                task,
+                completes,
+            } => {
+                let progress = self.progress.entry(key).or_default();
+                if completes {
+                    progress.finish(occurrence);
+                } else {
+                    progress.toggle(occurrence, task);
+                }
             }
             Action::Pause { until } => self.paused_until = Some(until),
             Action::Resume => self.paused_until = None,
@@ -265,10 +304,13 @@ impl Habit<'_> {
 fn habits(settings: &Settings) -> Vec<Habit<'_>> {
     let mut habits: Vec<Habit<'_>> = Vec::new();
     for reminder in &settings.reminders {
-        match habits.iter_mut().find(|habit| habit.text == reminder.text) {
+        let key = reminder.key();
+        match habits.iter_mut().find(|habit| habit.key == key) {
             Some(habit) => habit.reminders.push(reminder),
             None => habits.push(Habit {
+                key,
                 text: &reminder.text,
+                tasks: &reminder.tasks,
                 reminders: vec![reminder],
             }),
         }

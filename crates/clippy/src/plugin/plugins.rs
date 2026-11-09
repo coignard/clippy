@@ -393,6 +393,18 @@ impl Plugins {
         });
     }
 
+    pub(crate) fn toggle_task(
+        &mut self,
+        due: &Due,
+        task: usize,
+        character: &mut Character,
+        moment: Moment,
+    ) {
+        self.act(due.plugin, moment, |installed| {
+            installed.toggle_task(&due.notice.id, task, character, moment.local)
+        });
+    }
+
     pub(crate) fn dismiss(&mut self) {
         if let Some(Asking { plugin, .. }) = self.asking.take() {
             self.installed[plugin].dismiss();

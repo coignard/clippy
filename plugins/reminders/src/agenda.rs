@@ -75,7 +75,7 @@ impl Agenda {
                 && self.week(reminder).is_none()
             {
                 self.weeks.push(Week {
-                    text: reminder.text.clone(),
+                    text: reminder.key(),
                     from: reminder.days,
                     count,
                     monday,
@@ -91,11 +91,11 @@ impl Agenda {
                 continue;
             }
             for &hours in spans {
-                if self.pick(&reminder.text, hours, now.date()).is_none()
+                if self.pick(&reminder.key(), hours, now.date()).is_none()
                     && let Some(at) = random_time(settings, hours, now)
                 {
                     self.picks.push(Pick {
-                        text: reminder.text.clone(),
+                        text: reminder.key(),
                         hours,
                         at,
                     });
@@ -115,7 +115,7 @@ impl Agenda {
 
     fn week(&self, reminder: &Reminder) -> Option<&Week> {
         self.weeks.iter().find(|week| {
-            week.text == reminder.text
+            week.text == reminder.key()
                 && week.from == reminder.days
                 && Some(week.count) == reminder.random_days
         })

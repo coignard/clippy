@@ -510,3 +510,63 @@ fn a_reminder_at_a_random_time_on_random_days_tells_when_it_comes_next() {
     }
     assert_eq!(called, 3);
 }
+
+const ROUTINE: &str = "Morning routine:";
+const VITAMINS: &str = "Take your vitamins";
+const PLANTS: &str = "Water the plants";
+const TRASH: &str = "Take out the trash";
+
+fn routine() -> Settings {
+    settings(&format!(
+        r#"reminders = [
+            {{ text = "{ROUTINE}", tasks = ["{VITAMINS}", "{PLANTS}"], time = ["9:00", "18:00"] }},
+            {{ tasks = "{TRASH}", time = "20:00" }},
+        ]"#
+    ))
+}
+
+fn ticked(vitamins: bool, plants: bool) -> [(String, bool); 2] {
+    [(VITAMINS.to_owned(), vitamins), (PLANTS.to_owned(), plants)]
+}
+
+#[test]
+fn a_reminder_can_bring_tasks_to_tick_off_under_its_text() {
+    let mut harness = reminders(routine(), at(9, 0));
+    assert_eq!(harness.notices(), [ROUTINE]);
+    assert_eq!(harness.tasks(ROUTINE), ticked(false, false));
+    assert_eq!(harness.checkbox(ROUTINE), Some(until("18:00")));
+    harness.toggle_task(ROUTINE, VITAMINS);
+    assert_eq!(harness.tasks(ROUTINE), ticked(true, false));
+    harness.toggle_task(ROUTINE, VITAMINS);
+    assert_eq!(harness.tasks(ROUTINE), ticked(false, false));
+    harness.toggle_task(ROUTINE, VITAMINS);
+    harness.snooze(ROUTINE);
+    harness.set_time(at(9, 15));
+    assert_eq!(harness.tasks(ROUTINE), ticked(true, false));
+    harness.toggle_task(ROUTINE, PLANTS);
+    assert_eq!(harness.notices(), NOTHING);
+    harness.set_time(at(18, 0));
+    assert_eq!(harness.tasks(ROUTINE), ticked(false, false));
+}
+
+#[test]
+fn ticking_the_box_puts_a_reminder_with_tasks_away_whatever_is_left() {
+    let mut harness = reminders(routine(), at(9, 0));
+    harness.toggle_task(ROUTINE, VITAMINS);
+    harness.check(ROUTINE);
+    assert_eq!(harness.notices(), NOTHING);
+    harness.set_time(at(18, 0));
+    assert_eq!(harness.tasks(ROUTINE), ticked(false, false));
+}
+
+#[test]
+fn a_reminder_can_be_nothing_but_tasks() {
+    let mut harness = reminders(routine(), at(19, 0));
+    harness.check(ROUTINE);
+    harness.set_time(at(20, 0));
+    assert_eq!(harness.notices(), [""]);
+    assert_eq!(harness.tasks(TRASH), [(TRASH.to_owned(), false)]);
+    assert_eq!(harness.checkbox(TRASH).as_deref(), Some(AGAIN));
+    harness.toggle_task(TRASH, TRASH);
+    assert_eq!(harness.notices(), NOTHING);
+}

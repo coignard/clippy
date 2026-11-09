@@ -91,6 +91,22 @@ impl Harness {
         self.find(text).notice.id
     }
 
+    pub fn tasks(&self, text: &str) -> Vec<(String, bool)> {
+        self.find(text).notice.tasks
+    }
+
+    pub fn toggle_task(&mut self, text: &str, label: &str) {
+        let due = self.find(text);
+        let task = due
+            .notice
+            .tasks
+            .iter()
+            .position(|(task, _)| task == label)
+            .unwrap_or_else(|| panic!("the notice {text:?} should have a task {label:?}"));
+        self.plugins
+            .toggle_task(&due, task, &mut self.character, self.moment);
+    }
+
     pub fn checkbox(&self, text: &str) -> Option<String> {
         self.find(text).notice.checkbox
     }
@@ -234,7 +250,7 @@ impl Harness {
     fn find(&self, text: &str) -> Due {
         self.due()
             .into_iter()
-            .find(|due| due.notice.text == text)
+            .find(|due| due.notice.text == text || due.notice.id == text)
             .unwrap_or_else(|| panic!("a notice reading {text:?} should be due"))
     }
 

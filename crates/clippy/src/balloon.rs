@@ -37,6 +37,7 @@ pub(crate) enum Content<'a> {
     },
     Notice {
         text: &'a str,
+        tasks: &'a [(String, Checkbox)],
         checkbox: Option<(&'a str, Checkbox)>,
     },
     Checklist {
@@ -55,16 +56,26 @@ impl<'a> Content<'a> {
     }
 
     fn rows(self) -> Vec<(&'a str, Checkbox)> {
+        let listed = |items: &'a [(String, Checkbox)]| {
+            items.iter().map(|(label, state)| (label.as_str(), *state))
+        };
         match self {
             Content::Notice {
-                checkbox: Some(row),
-                ..
-            } => vec![row],
-            Content::Checklist { items, .. } => items
-                .iter()
-                .map(|(label, state)| (label.as_str(), *state))
-                .collect(),
-            Content::Message(_) | Content::Prompt { .. } | Content::Notice { .. } => Vec::new(),
+                tasks, checkbox, ..
+            } => listed(tasks).chain(checkbox).collect(),
+            Content::Checklist { items, .. } => listed(items).collect(),
+            Content::Message(_) | Content::Prompt { .. } => Vec::new(),
+        }
+    }
+
+    fn separated_from(self) -> Option<usize> {
+        match self {
+            Content::Notice {
+                text,
+                tasks,
+                checkbox: Some(_),
+            } if !text.is_empty() || !tasks.is_empty() => Some(tasks.len()),
+            _ => None,
         }
     }
 }

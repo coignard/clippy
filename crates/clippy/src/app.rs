@@ -23,7 +23,7 @@ use crate::shortcut::Shortcut;
 use crate::sound::Sound;
 
 pub use builder::Builder;
-use notices::Board;
+use notices::{Board, Released};
 use visibility::{Lasts, Need, Visibility};
 
 type Clock = Box<dyn Fn(Instant) -> Zoned>;
@@ -308,7 +308,7 @@ impl App {
             }
             Event::CheckboxPress { item } => {
                 if self.notices.is_displayed() {
-                    self.notices.press();
+                    self.notices.press(item);
                 } else {
                     self.plugins.press_checklist(item);
                 }
@@ -318,8 +318,13 @@ impl App {
                 self.plugins.drag_checklist(inside);
             }
             Event::CheckboxRelease { inside } => {
-                if let Some(due) = self.notices.release(inside) {
-                    self.check(&due, moment);
+                match self.notices.release(inside) {
+                    Some(Released::Checked(due)) => self.check(&due, moment),
+                    Some(Released::Toggled(due, task)) => {
+                        self.plugins
+                            .toggle_task(&due, task, &mut self.character, moment);
+                    }
+                    None => {}
                 }
                 self.plugins
                     .release_checklist(inside, &mut self.character, moment);

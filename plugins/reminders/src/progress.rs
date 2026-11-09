@@ -15,16 +15,26 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::collections::BTreeSet;
+
 use jiff::civil::{Date, DateTime};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct Progress {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) done: Option<DateTime>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) snoozed: Option<Snooze>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ticked: Option<Ticked>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct Ticked {
+    occurrence: DateTime,
+    tasks: BTreeSet<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,7 +57,30 @@ impl Progress {
     }
 
     pub(crate) fn is_from(&self, day: Date) -> bool {
-        self.done.is_some_and(|done| done.date() == day) || self.snooze_on(day).is_some()
+        self.done.is_some_and(|done| done.date() == day)
+            || self.snooze_on(day).is_some()
+            || self
+                .ticked
+                .as_ref()
+                .is_some_and(|ticked| ticked.occurrence.date() == day)
+    }
+
+    pub(crate) fn has_ticked(&self, occurrence: DateTime, task: &str) -> bool {
+        self.ticked
+            .as_ref()
+            .is_some_and(|ticked| ticked.occurrence == occurrence && ticked.tasks.contains(task))
+    }
+
+    pub(crate) fn toggle(&mut self, occurrence: DateTime, task: String) {
+        let ticked = self
+            .ticked
+            .take()
+            .filter(|ticked| ticked.occurrence == occurrence);
+        let mut tasks = ticked.map(|ticked| ticked.tasks).unwrap_or_default();
+        if !tasks.remove(&task) {
+            tasks.insert(task);
+        }
+        self.ticked = (!tasks.is_empty()).then_some(Ticked { occurrence, tasks });
     }
 
     pub(crate) fn snooze(&mut self, occurrence: DateTime, until: DateTime) {
@@ -61,6 +94,7 @@ impl Progress {
     pub(crate) fn finish(&mut self, occurrence: DateTime) {
         self.done = Some(self.done.map_or(occurrence, |done| done.max(occurrence)));
         self.snoozed = None;
+        self.ticked = None;
     }
 }
 
@@ -82,6 +116,26 @@ mod tests {
         assert_eq!(progress.snoozed, None);
         progress.finish(day.at(9, 0, 0, 0));
         assert_eq!(progress.done, Some(day.at(10, 0, 0, 0)));
+    }
+
+    #[test]
+    fn ticked_tasks_belong_to_their_occurrence() {
+        let day = date(2026, 10, 19);
+        let (nine, eleven) = (day.at(9, 0, 0, 0), day.at(11, 0, 0, 0));
+        let mut progress = Progress::default();
+        progress.toggle(nine, "Vitamins".into());
+        assert!(progress.has_ticked(nine, "Vitamins"));
+        assert!(!progress.has_ticked(eleven, "Vitamins"));
+        assert!(progress.is_from(day));
+        progress.toggle(nine, "Vitamins".into());
+        assert!(!progress.has_ticked(nine, "Vitamins"));
+        assert_eq!(progress, Progress::default());
+        progress.toggle(nine, "Vitamins".into());
+        progress.toggle(eleven, "Water".into());
+        assert!(!progress.has_ticked(nine, "Vitamins"));
+        assert!(progress.has_ticked(eleven, "Water"));
+        progress.finish(eleven);
+        assert!(!progress.has_ticked(eleven, "Water"));
     }
 
     #[test]

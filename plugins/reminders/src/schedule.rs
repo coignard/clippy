@@ -33,7 +33,7 @@ impl Reminder {
                 .find(|&at| at <= now),
             Schedule::Random(spans) => spans
                 .iter()
-                .filter_map(|&hours| agenda.pick(&self.text, hours, day))
+                .filter_map(|&hours| agenda.pick(&self.key(), hours, day))
                 .filter(|&at| at <= now)
                 .max(),
             Schedule::Every { .. } => {
@@ -53,7 +53,7 @@ impl Reminder {
                 .find(|&at| at > now),
             Schedule::Random(spans) => spans
                 .iter()
-                .filter_map(|&hours| agenda.pick(&self.text, hours, day))
+                .filter_map(|&hours| agenda.pick(&self.key(), hours, day))
                 .filter(|&at| at > now)
                 .min(),
             Schedule::Every { .. } => {
@@ -130,6 +130,7 @@ mod tests {
     fn reminder(schedule: Schedule) -> Reminder {
         Reminder {
             text: "Stretch.".into(),
+            tasks: Vec::new(),
             schedule,
             days: Days::EVERY_DAY,
             random_days: None,

@@ -44,6 +44,7 @@ pub struct Settings {
 #[serde(try_from = "RawReminder", into = "RawReminder")]
 pub(crate) struct Reminder {
     pub(crate) text: String,
+    pub(crate) tasks: Vec<String>,
     pub(crate) schedule: Schedule,
     pub(crate) days: Days,
     pub(crate) random_days: Option<u8>,
@@ -66,8 +67,10 @@ pub(crate) struct Snoozes(Vec<Interval>);
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum SettingsError {
-    #[error("a reminder needs some text")]
+    #[error("a reminder needs some text or tasks")]
     NoText,
+    #[error("`{0}` has a task without words")]
+    BlankTask(String),
     #[error("`{0}` needs a `time`, an `every` or a `random`")]
     NoSchedule(String),
     #[error("`{0}` has more than one of `time`, `every` and `random`, keep one of them")]
@@ -93,7 +96,10 @@ pub(crate) enum SettingsError {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawReminder {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tasks: Option<OneOrMany<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     time: Option<OneOrMany<TimeOfDay>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -198,8 +204,16 @@ impl TryFrom<RawReminder> for Reminder {
 
     fn try_from(raw: RawReminder) -> Result<Self, Self::Error> {
         let text = raw.text.trim().to_owned();
-        if text.is_empty() {
+        let tasks: Vec<String> = raw
+            .tasks
+            .map(|OneOrMany(tasks)| tasks.iter().map(|task| task.trim().to_owned()).collect())
+            .unwrap_or_default();
+        if text.is_empty() && tasks.is_empty() {
             return Err(SettingsError::NoText);
+        }
+        let text = key(&text, &tasks);
+        if tasks.iter().any(String::is_empty) {
+            return Err(SettingsError::BlankTask(text));
         }
         let bounded = raw.from.is_some() || raw.until.is_some();
         let schedule = match (raw.time, raw.every, raw.random) {
@@ -247,7 +261,8 @@ impl TryFrom<RawReminder> for Reminder {
             _ => {}
         }
         Ok(Self {
-            text,
+            text: raw.text.trim().to_owned(),
+            tasks,
             schedule,
             days,
             random_days: raw.random_days,
@@ -268,6 +283,7 @@ impl From<Reminder> for RawReminder {
         };
         Self {
             text: reminder.text,
+            tasks: (!reminder.tasks.is_empty()).then_some(OneOrMany(reminder.tasks)),
             time,
             every,
             random,
@@ -277,6 +293,21 @@ impl From<Reminder> for RawReminder {
             random_days: reminder.random_days,
         }
     }
+}
+
+impl Reminder {
+    pub(crate) fn key(&self) -> String {
+        key(&self.text, &self.tasks)
+    }
+}
+
+fn key(text: &str, tasks: &[String]) -> String {
+    let mut parts = Some(text)
+        .filter(|text| !text.is_empty())
+        .into_iter()
+        .chain(tasks.iter().map(String::as_str));
+    let first = parts.next().unwrap_or_default().to_owned();
+    parts.fold(first, |key, part| format!("{key}\n{part}"))
 }
 
 impl<T: Serialize> Serialize for OneOrMany<T> {
@@ -421,9 +452,51 @@ mod tests {
     }
 
     #[test]
+    fn reminders_can_come_with_tasks_with_or_without_text() {
+        let settings = read(
+            r#"
+            reminders = [
+                { text = "Stand up and stretch.", time = "10:00" },
+                { text = "Morning routine:", tasks = ["Take your vitamins", "Water the plants"], time = "9:00" },
+                { tasks = "Take out the trash", time = "20:00" },
+            ]
+            "#,
+        )
+        .unwrap();
+        let [plain, routine, trash] = &settings.reminders[..] else {
+            panic!("three reminders");
+        };
+        assert_eq!(plain.tasks, Vec::<String>::new());
+        assert_eq!(plain.key(), "Stand up and stretch.");
+        assert_eq!(routine.text, "Morning routine:");
+        assert_eq!(routine.tasks, ["Take your vitamins", "Water the plants"]);
+        assert_eq!(
+            routine.key(),
+            "Morning routine:\nTake your vitamins\nWater the plants"
+        );
+        assert_eq!(trash.text, "");
+        assert_eq!(trash.tasks, ["Take out the trash"]);
+        assert_eq!(trash.key(), "Take out the trash");
+        let written = toml::to_string(&settings).unwrap();
+        assert!(!written.contains("text = \"\""), "{written}");
+        assert_eq!(read(&written), Ok(settings));
+    }
+
+    #[test]
     fn explains_what_is_wrong_with_a_reminder() {
         for (text, problem) in [
-            (r#"{ text = " ", time = "10:00" }"#, "needs some text"),
+            (
+                r#"{ text = " ", time = "10:00" }"#,
+                "needs some text or tasks",
+            ),
+            (
+                r#"{ tasks = [], time = "10:00" }"#,
+                "needs some text or tasks",
+            ),
+            (
+                r#"{ text = "Routine:", tasks = ["Vitamins", " "], time = "10:00" }"#,
+                "task without words",
+            ),
             (
                 r#"{ text = "Stretch." }"#,
                 "needs a `time`, an `every` or a `random`",

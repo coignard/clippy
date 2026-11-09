@@ -190,12 +190,20 @@ pub struct Notice<A> {
     id: String,
     text: String,
     on_snooze: A,
+    tasks: Vec<Task<A>>,
     checkbox: Option<(String, A)>,
     over_full_screen: bool,
     shortcut: Option<Shortcut>,
     check_shortcut: Option<Shortcut>,
     urgency: Urgency,
     celebrates: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Task<A> {
+    label: String,
+    done: bool,
+    on_toggle: A,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -212,6 +220,7 @@ impl<A> Notice<A> {
             id: id.into(),
             text: text.into(),
             on_snooze,
+            tasks: Vec::new(),
             checkbox: None,
             over_full_screen: false,
             shortcut: None,
@@ -219,6 +228,16 @@ impl<A> Notice<A> {
             urgency: Urgency::Normal,
             celebrates: true,
         }
+    }
+
+    #[must_use]
+    pub fn task(mut self, label: impl Into<String>, done: bool, on_toggle: A) -> Self {
+        self.tasks.push(Task {
+            label: label.into(),
+            done,
+            on_toggle,
+        });
+        self
     }
 
     #[must_use]

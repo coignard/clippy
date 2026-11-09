@@ -481,6 +481,46 @@ impl Plugin for Digest {
 }
 
 #[derive(Default, Serialize, Deserialize)]
+struct Errands {
+    ticked: [bool; 2],
+    done: bool,
+}
+
+enum ErrandAction {
+    Later,
+    Toggle(usize),
+    Done,
+}
+
+impl Plugin for Errands {
+    const NAME: &'static str = "Errands";
+
+    type Action = ErrandAction;
+
+    type Settings = NoSettings;
+
+    fn notices(&self, _: &NoSettings, _: DateTime) -> Vec<Notice<ErrandAction>> {
+        (!self.done)
+            .then(|| {
+                Notice::new("errands", "Errands:", ErrandAction::Later)
+                    .task("Post the letter", self.ticked[0], ErrandAction::Toggle(0))
+                    .task("Buy bread", self.ticked[1], ErrandAction::Toggle(1))
+                    .checkbox(DONE, ErrandAction::Done)
+            })
+            .into_iter()
+            .collect()
+    }
+
+    fn perform(&mut self, action: ErrandAction, _: &mut Context<'_, Self>) {
+        match action {
+            ErrandAction::Later => {}
+            ErrandAction::Toggle(task) => self.ticked[task] = !self.ticked[task],
+            ErrandAction::Done => self.done = true,
+        }
+    }
+}
+
+#[derive(Default, Serialize, Deserialize)]
 struct Sleeper;
 
 impl Plugin for Sleeper {
@@ -702,6 +742,7 @@ fn notice(app: &App) -> Option<(&str, Checkbox)> {
         Content::Notice {
             text,
             checkbox: Some((DONE, checkbox)),
+            ..
         } => Some((text, checkbox)),
         _ => None,
     }
@@ -1881,6 +1922,87 @@ fn what_you_ask_for_stays_over_an_urgent_notice_already_waiting() {
     assert_eq!(called(&app), Some("Your day"));
     app.handle(Event::MessageDoubleClick, later);
     assert_eq!(called(&app), Some("Review"));
+}
+
+fn with_errands(directory: &TempDir) -> (App, Instant) {
+    let mut app = App::builder()
+        .plugin::<Errands>()
+        .build(enabling(&["Errands"]), Storage::new(directory.path()));
+    app.place(CLIPPY, SCREEN);
+    let (mut app, now) = start(app);
+    let now = settle(&mut app, now, |app| called(app).is_some());
+    (app, now)
+}
+
+fn errands(app: &App) -> Vec<(bool, bool)> {
+    match app.balloon(None) {
+        Some(Content::Notice {
+            tasks,
+            checkbox: Some((_, checkbox)),
+            ..
+        }) => tasks
+            .iter()
+            .chain([&(String::new(), checkbox)])
+            .map(|(_, state)| (state.checked, state.pressed))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn click(app: &mut App, item: usize, now: Instant) {
+    app.handle(Event::CheckboxPress { item }, now);
+    app.handle(Event::CheckboxRelease { inside: true }, now);
+}
+
+#[test]
+fn tasks_tick_off_one_by_one_and_the_last_one_ticks_the_box() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_errands(&directory);
+    assert_eq!(called(&app), Some("Errands:"));
+    assert_eq!(errands(&app), [(false, false); 3]);
+    app.handle(Event::CheckboxPress { item: 1 }, now);
+    assert_eq!(
+        errands(&app),
+        [(false, false), (false, true), (false, false)]
+    );
+    app.handle(Event::CheckboxRelease { inside: true }, now);
+    assert_eq!(
+        errands(&app),
+        [(false, false), (true, false), (false, false)]
+    );
+    assert!(!celebrates(&app));
+    click(&mut app, 1, now);
+    assert_eq!(errands(&app), [(false, false); 3]);
+    click(&mut app, 1, now);
+    click(&mut app, 0, now);
+    assert_eq!(errands(&app), [(true, false); 3]);
+    assert!(celebrates(&app));
+    settle(&mut app, now, |app| called(app).is_none());
+    assert!(!celebrates(&app));
+}
+
+#[test]
+fn ticking_the_box_leaves_the_tasks_as_they_were() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_errands(&directory);
+    click(&mut app, 0, now);
+    click(&mut app, 2, now);
+    assert_eq!(
+        errands(&app),
+        [(true, false), (false, false), (true, false)]
+    );
+    assert!(celebrates(&app));
+}
+
+#[test]
+fn letting_go_of_a_task_elsewhere_leaves_it_alone() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_errands(&directory);
+    app.handle(Event::CheckboxPress { item: 0 }, now);
+    app.handle(Event::CheckboxDrag { inside: false }, now);
+    assert_eq!(errands(&app), [(false, false); 3]);
+    app.handle(Event::CheckboxRelease { inside: false }, now);
+    assert_eq!(errands(&app), [(false, false); 3]);
 }
 
 #[test]
