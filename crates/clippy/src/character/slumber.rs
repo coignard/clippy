@@ -34,6 +34,7 @@ const STIRS: [RangeInclusive<usize>; 3] = [OPENING_AN_EYE, SQUINTING, LOOKING_UP
 const TOSSING: RangeInclusive<usize> = 62..=80;
 const STARTLED: RangeInclusive<usize> = 56..=60;
 const SLITS: usize = 48;
+const SHUTTING: [(RangeInclusive<usize>, usize); 3] = [(39..=42, 43), (47..=49, 50), (54..=59, 60)];
 const SLITS_HELD: Duration = Duration::from_millis(1500);
 const OPENING_THE_EYES: usize = 81;
 const GETTING_UP: usize = 83;
@@ -100,6 +101,9 @@ impl Slumber {
         };
         if self.frame == SLITS && waking == Some(Manner::AtOnce) && self.waking != waking {
             self.next_step -= SLITS_HELD.saturating_sub(self.frame().duration);
+        }
+        if self.waking.is_some() && waking.is_none() && self.phase() == Phase::Stirring {
+            self.next_step = self.next_step.min(now);
         }
         self.waking = waking;
         self.disturbed |= self.waking.is_some();
@@ -175,12 +179,8 @@ impl Slumber {
             (_, Some(Manner::Gently)) if exit == Some(GETTING_UP) => *SQUINTING.start(),
             (_, Some(_)) => exit.unwrap_or(frame + 1),
             (Phase::Snoring, None) if frame == *SNORING.end() => self.snore_or_stir(rng),
-            (Phase::Stirring, None)
-                if frame == *OPENING_AN_EYE.end()
-                    || (frame == *SQUINTING.end() && self.disturbed) =>
-            {
-                *TOSSING.start()
-            }
+            (Phase::Stirring, None) if self.disturbed => shut_eyes(frame),
+            (Phase::Stirring, None) if frame == *OPENING_AN_EYE.end() => *TOSSING.start(),
             (Phase::Tossing, None) if frame == *TOSSING.end() => *SNORING.start(),
             _ => self.frame().branch(rng).unwrap_or(frame + 1),
         }
@@ -198,6 +198,19 @@ impl Slumber {
             _ => *OPENING_AN_EYE.start(),
         }
     }
+}
+
+fn shut_eyes(frame: usize) -> usize {
+    SHUTTING
+        .iter()
+        .find_map(|(open, shutting)| open.contains(&frame).then_some(*shutting))
+        .or_else(|| {
+            SHUTTING
+                .iter()
+                .any(|(_, shutting)| *shutting == frame)
+                .then_some(frame + 1)
+        })
+        .unwrap_or(*TOSSING.start())
 }
 
 fn clip() -> &'static Clip {
@@ -541,8 +554,35 @@ mod tests {
         let mut run = Run::asleep();
         run.until(GENTLY, |slumber| slumber.frame == 47);
         run.until(Wish::Sleep, |slumber| slumber.frame == *SNORING.start());
-        let rest = run.frames.strip_prefix(&[48, 49, 50, 51, 62]).unwrap();
+        let rest = run.frames.strip_prefix(&[50, 51, 62]).unwrap();
         assert!(tosses_and_sleeps_on(rest), "{:?}", run.frames);
+    }
+
+    #[test]
+    fn shuts_his_eyes_the_moment_he_is_left_alone() {
+        let open = |frame: usize| SHUTTING.iter().any(|(open, _)| open.contains(&frame));
+        for gently in 1.. {
+            let mut run = Run::asleep();
+            for _ in 0..gently {
+                run.step(GENTLY);
+            }
+            if run.slumber.frame >= OPENING_THE_EYES {
+                assert!(gently > 20, "only {gently} steps to get up");
+                break;
+            }
+            let from = run.slumber.frame;
+            let left = run.now;
+            run.slumber
+                .advance(Wish::Sleep, left, &mut run.rng, &mut Vec::new());
+            run.until(Wish::Sleep, |slumber| !open(slumber.frame));
+            assert!(run.now - left <= Duration::from_millis(100), "from {from}");
+            run.until(Wish::Sleep, |slumber| slumber.frame == *SNORING.start());
+            assert!(
+                run.frames.iter().all(|&frame| !open(frame)),
+                "from {from}: {:?}",
+                run.frames
+            );
+        }
     }
 
     #[test]
