@@ -76,9 +76,10 @@ impl Storage {
         let Some(json) = read(&path)? else {
             return Ok(None);
         };
-        serde_json::from_str(&json)
-            .map(Some)
-            .map_err(|source| StorageError::Json { path, source })
+        serde_json::from_str(&json).map(Some).map_err(|source| {
+            self.set_aside(&path, name);
+            StorageError::Json { path, source }
+        })
     }
 
     pub(crate) fn save<T: Serialize>(&self, name: &str, value: &T) -> Result<(), StorageError> {
@@ -109,6 +110,24 @@ impl Storage {
 
     fn state(&self, name: &str) -> PathBuf {
         self.directory.join(format!("{name}.json"))
+    }
+
+    fn set_aside(&self, path: &Path, name: &str) {
+        let Some(aside) = (1..=u16::MAX)
+            .map(|copy| match copy {
+                1 => format!("{name} (unreadable).json"),
+                copy => format!("{name} (unreadable {copy}).json"),
+            })
+            .map(|file| self.directory.join(file))
+            .find(|aside| !aside.exists())
+        else {
+            log::error!("Could not find a place to set {} aside", path.display());
+            return;
+        };
+        match fs::rename(path, &aside) {
+            Ok(()) => log::warn!("Set {} aside as {}", path.display(), aside.display()),
+            Err(error) => log::error!("Could not set {} aside: {error}", path.display()),
+        }
     }
 
     fn write(&self, path: &Path, contents: &[u8]) -> Result<(), StorageError> {
@@ -174,6 +193,25 @@ mod tests {
         let error = storage.load::<u32>("Note").unwrap_err();
         assert!(matches!(error, StorageError::Json { .. }));
         assert!(error.to_string().contains("Note.json"));
+    }
+
+    #[test]
+    fn sets_unreadable_state_aside_before_anything_overwrites_it() {
+        let (_directory, storage) = storage();
+        for broken in ["{ \"items\": [", "{ \"items\": [\"Call"] {
+            storage.save("Note", &"Ship it").unwrap();
+            fs::write(storage.state("Note"), broken).unwrap();
+            assert!(storage.load::<Vec<String>>("Note").is_err());
+            assert_eq!(storage.load::<Vec<String>>("Note").unwrap(), None);
+            storage.save("Note", &["Buy milk"]).unwrap();
+        }
+        let aside = |file: &str| fs::read_to_string(storage.directory.join(file)).unwrap();
+        assert_eq!(aside("Note (unreadable).json"), "{ \"items\": [");
+        assert_eq!(aside("Note (unreadable 2).json"), "{ \"items\": [\"Call");
+        assert_eq!(
+            storage.load::<Vec<String>>("Note").unwrap(),
+            Some(vec!["Buy milk".to_owned()])
+        );
     }
 
     #[test]
