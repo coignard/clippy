@@ -19,10 +19,34 @@ use clippy::hours::TimeOfDay;
 use jiff::SignedDuration;
 use jiff::civil::{Date, DateTime, Time};
 
-use crate::agenda::Agenda;
+use crate::agenda::{Agenda, monday_of};
 use crate::settings::{Reminder, Schedule};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Comeback {
+    At(DateTime),
+    On(Date),
+    NextWeek,
+}
+
 impl Reminder {
+    pub(crate) fn first_on(&self, day: Date, today: Date, agenda: &Agenda) -> Option<Comeback> {
+        if self.random_days.is_some() && monday_of(day) != monday_of(today) {
+            return self
+                .days
+                .contains(day.weekday())
+                .then_some(Comeback::NextWeek);
+        }
+        let day = self.day(day, agenda)?;
+        Some(match &self.schedule {
+            Schedule::At(times) => Comeback::At(day.to_datetime(times.first()?.time())),
+            Schedule::Every {
+                from: Some(from), ..
+            } => Comeback::At(day.to_datetime(from.time())),
+            Schedule::Every { from: None, .. } | Schedule::Random(_) => Comeback::On(day),
+        })
+    }
+
     pub(crate) fn latest(&self, now: DateTime, agenda: &Agenda) -> Option<DateTime> {
         let day = self.day(now.date(), agenda)?;
         match &self.schedule {

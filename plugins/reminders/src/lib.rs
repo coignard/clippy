@@ -28,14 +28,15 @@ use std::collections::BTreeMap;
 
 use clippy::hours::TimeOfDay;
 use clippy::{Context, MenuItem, Notice, Plugin};
-use jiff::SignedDuration;
-use jiff::civil::{DateTime, Time};
+use jiff::civil::{Date, DateTime, Time};
+use jiff::{SignedDuration, ToSpan};
 use serde::{Deserialize, Serialize};
 
 pub use settings::Settings;
 
 use agenda::Agenda;
 use progress::Progress;
+use schedule::Comeback;
 use settings::Reminder;
 
 const PAUSE: SignedDuration = SignedDuration::from_hours(1);
@@ -102,9 +103,9 @@ impl Reminders {
         let progress = self.progress_of(habit);
         let snoozes = progress.snoozes_of(occurrence);
         let label = match self.next_showing(settings, habit, now) {
-            Some(at) => format!(
+            Some(comeback) => format!(
                 "Don't show me this reminder until {}",
-                TimeOfDay::from(at.time())
+                until(now.date(), comeback)
             ),
             None => "Don't show me this reminder again".to_owned(),
         };
@@ -146,9 +147,20 @@ impl Reminders {
         settings: &Settings,
         habit: &Habit<'_>,
         now: DateTime,
-    ) -> Option<DateTime> {
-        let next = settings.after_quiet_hours(habit.next(now, &self.agenda)?)?;
-        (next.date() == now.date()).then_some(next)
+    ) -> Option<Comeback> {
+        let today = now.date();
+        let later_today = habit
+            .next(now, &self.agenda)
+            .and_then(|at| settings.after_quiet_hours(at))
+            .filter(|at| at.date() == today);
+        if let Some(at) = later_today {
+            return Some(Comeback::At(at));
+        }
+        today
+            .series(1.day())
+            .skip(1)
+            .take(7)
+            .find_map(|day| habit.first_on(settings, day, today, &self.agenda))
     }
 
     fn tidy(&mut self, now: DateTime) {
@@ -299,6 +311,34 @@ impl Habit<'_> {
             .filter_map(|reminder| reminder.next(now, agenda))
             .min()
     }
+
+    fn first_on(
+        &self,
+        settings: &Settings,
+        day: Date,
+        today: Date,
+        agenda: &Agenda,
+    ) -> Option<Comeback> {
+        let comebacks: Vec<Comeback> = self
+            .reminders
+            .iter()
+            .filter_map(|reminder| match reminder.first_on(day, today, agenda)? {
+                Comeback::At(at) => settings
+                    .after_quiet_hours(at)
+                    .filter(|at| at.date() == day)
+                    .map(Comeback::At),
+                vague => Some(vague),
+            })
+            .collect();
+        if comebacks
+            .iter()
+            .all(|comeback| matches!(comeback, Comeback::At(_)))
+        {
+            comebacks.into_iter().min()
+        } else {
+            comebacks.into_iter().max()
+        }
+    }
 }
 
 fn habits(settings: &Settings) -> Vec<Habit<'_>> {
@@ -316,6 +356,25 @@ fn habits(settings: &Settings) -> Vec<Habit<'_>> {
         }
     }
     habits
+}
+
+fn until(today: Date, comeback: Comeback) -> String {
+    let (day, time) = match comeback {
+        Comeback::At(at) => (at.date(), Some(TimeOfDay::from(at.time()))),
+        Comeback::On(day) => (day, None),
+        Comeback::NextWeek => return "next week".to_owned(),
+    };
+    let day = match today.until(day).map_or(0, |span| span.get_days()) {
+        0 => String::new(),
+        1 => "tomorrow".to_owned(),
+        2..=6 => day.strftime("%A").to_string(),
+        _ => day.strftime("next %A").to_string(),
+    };
+    match time {
+        Some(time) if day.is_empty() => time.to_string(),
+        Some(time) => format!("{day} at {time}"),
+        None => day,
+    }
 }
 
 fn midnight_after(now: DateTime) -> DateTime {

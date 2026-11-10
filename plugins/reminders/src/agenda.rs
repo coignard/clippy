@@ -141,7 +141,7 @@ fn random_days(from: Days, count: u8, today: Date) -> Vec<Date> {
     left
 }
 
-fn monday_of(day: Date) -> Date {
+pub(crate) fn monday_of(day: Date) -> Date {
     let since = i64::from(day.weekday().to_monday_zero_offset());
     day.checked_sub(since.days()).unwrap_or(day)
 }

@@ -26,7 +26,6 @@ use crate::settings::Snoozes;
 const DAY: Date = date(2026, 10, 19);
 const STRETCH: &str = "Stand up and stretch.";
 const WATER: &str = "Have a glass of water.";
-const AGAIN: &str = "Don't show me this reminder again";
 const NOTHING: [&str; 0] = [];
 
 fn at(hour: i8, minute: i8) -> DateTime {
@@ -73,7 +72,7 @@ fn reminds_on_time_with_a_way_out() {
     assert_eq!(harness.next_change(), Some(at(10, 0)));
     harness.set_time(at(10, 0));
     assert_eq!(harness.notices(), [STRETCH]);
-    assert_eq!(harness.checkbox(STRETCH).as_deref(), Some(AGAIN));
+    assert_eq!(harness.checkbox(STRETCH), Some(until("tomorrow at 10:00")));
     assert!(harness.shows_over_full_screen(STRETCH));
     assert_eq!(
         harness.shortcut(STRETCH),
@@ -189,7 +188,7 @@ fn hourly_reminders_name_the_hour_they_come_back() {
 #[test]
 fn the_last_hourly_reminder_of_the_day_says_so() {
     let mut harness = reminders(hourly(), at(17, 0));
-    assert_eq!(harness.checkbox(WATER).as_deref(), Some(AGAIN));
+    assert_eq!(harness.checkbox(WATER), Some(until("tomorrow at 09:00")));
     harness.check(WATER);
     harness.set_time(at(23, 0));
     assert_eq!(harness.notices(), NOTHING);
@@ -261,7 +260,7 @@ fn the_checkbox_counts_quiet_hours_in() {
     let mut harness = reminders(settings, at(10, 0));
     assert_eq!(harness.checkbox(WATER), Some(until("12:30")));
     harness.set_time(at(16, 0));
-    assert_eq!(harness.checkbox(WATER).as_deref(), Some(AGAIN));
+    assert_eq!(harness.checkbox(WATER), Some(until("tomorrow at 09:00")));
 }
 
 #[test]
@@ -273,6 +272,46 @@ fn reminders_keep_to_their_days() {
     assert_eq!(harness.notices(), NOTHING);
     harness.set_time(date(2026, 10, 24).at(10, 0, 0, 0));
     assert_eq!(harness.notices(), [STRETCH]);
+}
+
+#[test]
+fn the_checkbox_names_the_day_a_reminder_comes_back() {
+    let weekend = settings(&format!(
+        r#"reminders = [{{ text = "{STRETCH}", time = ["10:00", "18:00"], days = ["Sat", "Sun"] }}]"#
+    ));
+    let mut harness = reminders(weekend, date(2026, 10, 24).at(19, 0, 0, 0));
+    assert_eq!(harness.checkbox(STRETCH), Some(until("tomorrow at 10:00")));
+    harness.set_time(date(2026, 10, 25).at(19, 0, 0, 0));
+    assert_eq!(harness.checkbox(STRETCH), Some(until("Saturday at 10:00")));
+    let mondays = settings(&format!(
+        r#"reminders = [{{ text = "{STRETCH}", time = "10:00", days = ["Mon"] }}]"#
+    ));
+    let harness = reminders(mondays, at(10, 0));
+    assert_eq!(
+        harness.checkbox(STRETCH),
+        Some(until("next Monday at 10:00"))
+    );
+}
+
+#[test]
+fn the_checkbox_names_only_the_day_when_the_time_is_not_known_yet() {
+    let settings = settings(&format!(
+        r#"reminders = [{{ text = "{WATER}", every = "1h" }}]"#
+    ));
+    let mut harness = reminders(settings, at(9, 7));
+    harness.set_time(at(23, 7));
+    assert_eq!(harness.checkbox(WATER), Some(until("tomorrow")));
+}
+
+#[test]
+fn random_days_not_picked_yet_come_back_next_week() {
+    let friend = settings(&format!(
+        r#"reminders = [{{ text = "{FRIEND}", time = "18:00", random_days = 7 }}]"#
+    ));
+    let mut harness = reminders(friend, at(18, 0));
+    assert_eq!(harness.checkbox(FRIEND), Some(until("tomorrow at 18:00")));
+    harness.set_time(date(2026, 10, 25).at(18, 0, 0, 0));
+    assert_eq!(harness.checkbox(FRIEND), Some(until("next week")));
 }
 
 #[test]
@@ -440,7 +479,7 @@ fn a_random_reminder_comes_once_at_its_minute_and_stays_put() {
     assert_eq!(harness.next_change(), Some(picked));
     harness.set_time(picked);
     assert_eq!(harness.notices(), [MUSIC]);
-    assert_eq!(harness.checkbox(MUSIC).as_deref(), Some(AGAIN));
+    assert_eq!(harness.checkbox(MUSIC), Some(until("tomorrow")));
     harness.check(MUSIC);
     assert_eq!(harness.notices(), NOTHING);
     assert_eq!(harness.next_change(), Some(next_day(0, 0)));
@@ -575,7 +614,7 @@ fn a_reminder_can_be_nothing_but_tasks() {
     harness.set_time(at(20, 0));
     assert_eq!(harness.notices(), [""]);
     assert_eq!(harness.tasks(TRASH), [(TRASH.to_owned(), false)]);
-    assert_eq!(harness.checkbox(TRASH).as_deref(), Some(AGAIN));
+    assert_eq!(harness.checkbox(TRASH), Some(until("tomorrow at 20:00")));
     harness.toggle_task(TRASH, TRASH);
     assert_eq!(harness.notices(), NOTHING);
 }
