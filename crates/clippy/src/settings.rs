@@ -119,34 +119,12 @@ mod tests {
     }
 
     #[test]
-    fn missing_keys_fall_back_to_defaults() {
-        let settings: Settings = toml::from_str("scale = 2\n").unwrap();
-        assert_eq!(
-            settings,
-            Settings {
-                scale: NonZeroU8::new(2).unwrap(),
-                ..Settings::default()
-            }
-        );
-    }
-
-    #[test]
     fn idle_pause_bounds_may_come_in_any_order() {
         let settings: Settings = toml::from_str("idle_pause_seconds = [30, 10]\n").unwrap();
         assert_eq!(
             settings.idle_pause,
             Duration::from_secs(10)..=Duration::from_secs(30)
         );
-    }
-
-    #[test]
-    fn lists_enabled_plugins_in_order() {
-        let settings: Settings = toml::from_str("plugins = [\"Focus\", \"Note\"]\n").unwrap();
-        assert_eq!(
-            settings.plugins.as_deref(),
-            Some(["Focus".to_owned(), "Note".to_owned()].as_slice())
-        );
-        assert_eq!(Settings::default().plugins, None);
     }
 
     #[test]

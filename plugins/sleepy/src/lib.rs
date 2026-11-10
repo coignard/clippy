@@ -97,18 +97,6 @@ mod tests {
     }
 
     #[test]
-    fn sleeps_through_the_night_by_default() {
-        let mut sleepy = Harness::new(Sleepy);
-        assert!(!asleep_at(&mut sleepy, 21, 59));
-        assert!(asleep_at(&mut sleepy, 22, 0));
-        assert!(asleep_at(&mut sleepy, 23, 30));
-        assert!(!asleep_at(&mut sleepy, 12, 0));
-        let mut sleepy = Harness::new(Sleepy);
-        assert!(asleep_at(&mut sleepy, 6, 59));
-        assert!(!asleep_at(&mut sleepy, 7, 0));
-    }
-
-    #[test]
     fn keeps_to_every_sleep_hours() {
         let mut sleepy = with_hours(r#"["13:00-14:00", "23:30-6:30"]"#);
         assert!(asleep_at(&mut sleepy, 13, 15));

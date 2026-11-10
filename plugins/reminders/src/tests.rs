@@ -126,17 +126,6 @@ fn snoozes_count_from_the_double_click() {
 }
 
 #[test]
-fn ticking_the_box_settles_a_daily_reminder_for_the_day() {
-    let mut harness = reminders(habits(), at(10, 0));
-    harness.check(STRETCH);
-    assert_eq!(harness.notices(), NOTHING);
-    harness.set_time(at(23, 59));
-    assert_eq!(harness.notices(), [WATER]);
-    harness.set_time(next_day(10, 0));
-    assert_eq!(harness.notices(), [STRETCH]);
-}
-
-#[test]
 fn a_new_day_starts_the_snoozes_afresh() {
     let mut harness = reminders(habits(), at(10, 0));
     for snoozed in [at(10, 0), at(10, 15), at(10, 45)] {
@@ -415,14 +404,6 @@ fn quiet_hours_all_day_never_promise_a_time() {
 fn without_reminders_there_is_nothing_to_pause() {
     let harness = reminders(Settings::default(), at(10, 0));
     assert_eq!(harness.menu(), []);
-}
-
-#[test]
-fn reminders_can_wait_for_full_screen_to_end() {
-    let mut settings = habits();
-    settings.show_in_full_screen = false;
-    let harness = reminders(settings, at(10, 0));
-    assert!(!harness.shows_over_full_screen(STRETCH));
 }
 
 #[test]

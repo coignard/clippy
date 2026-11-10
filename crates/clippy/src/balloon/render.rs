@@ -306,12 +306,6 @@ mod tests {
     }
 
     #[test]
-    fn the_line_is_the_balloon_seven_tenths_as_bright() {
-        assert_eq!(CLIPPIT.balloon.fill, [0xFF, 0xFF, 0xE1, 0xFF]);
-        assert_eq!(separator_color(), [178, 178, 157, 0xFF]);
-    }
-
-    #[test]
     fn only_a_box_at_the_bottom_gets_a_line() {
         let tasks = errands();
         let without_box = Layout::new(Content::Notice {

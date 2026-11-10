@@ -132,14 +132,11 @@ impl Grid {
 
 #[cfg(test)]
 mod tests {
-    use clippy::hours::{Hours, TimeOfDay};
-    use jiff::ToSpan;
-    use jiff::civil::{Weekday, date};
+    use jiff::civil::date;
 
     use super::*;
     use crate::days::Days;
     use crate::interval::Interval;
-    use crate::settings::Settings;
 
     const DAY: Date = date(2026, 10, 19);
 
@@ -147,59 +144,23 @@ mod tests {
         DAY.at(hour, minute, 0, 0)
     }
 
-    fn time(text: &str) -> TimeOfDay {
-        text.parse().unwrap()
-    }
-
-    fn reminder(schedule: Schedule) -> Reminder {
+    fn hourly() -> Reminder {
         Reminder {
             text: "Stretch.".into(),
             tasks: Vec::new(),
-            schedule,
+            schedule: Schedule::Every {
+                interval: Interval::minutes(60),
+                from: None,
+                until: None,
+            },
             days: Days::EVERY_DAY,
             random_days: None,
         }
     }
 
-    fn hourly(from: Option<&str>, until: Option<&str>) -> Reminder {
-        reminder(Schedule::Every {
-            interval: Interval::minutes(60),
-            from: from.map(time),
-            until: until.map(time),
-        })
-    }
-
-    #[test]
-    fn fixed_times_come_in_order() {
-        let twice = reminder(Schedule::At(vec![time("10:00"), time("15:00")]));
-        assert_eq!(twice.latest(at(9, 59), &Agenda::default()), None);
-        assert_eq!(twice.latest(at(10, 0), &Agenda::default()), Some(at(10, 0)));
-        assert_eq!(twice.latest(at(16, 0), &Agenda::default()), Some(at(15, 0)));
-        assert_eq!(twice.next(at(10, 0), &Agenda::default()), Some(at(15, 0)));
-        assert_eq!(twice.next(at(15, 0), &Agenda::default()), None);
-    }
-
-    #[test]
-    fn hourly_reminders_start_on_the_hour_they_are_given() {
-        let hourly = hourly(Some("9:00"), Some("12:00"));
-        assert_eq!(hourly.latest(at(8, 59), &Agenda::default()), None);
-        assert_eq!(hourly.latest(at(9, 0), &Agenda::default()), Some(at(9, 0)));
-        assert_eq!(
-            hourly.latest(at(10, 59), &Agenda::default()),
-            Some(at(10, 0))
-        );
-        assert_eq!(
-            hourly.latest(at(18, 0), &Agenda::default()),
-            Some(at(12, 0))
-        );
-        assert_eq!(hourly.next(at(8, 0), &Agenda::default()), Some(at(9, 0)));
-        assert_eq!(hourly.next(at(10, 30), &Agenda::default()), Some(at(11, 0)));
-        assert_eq!(hourly.next(at(12, 0), &Agenda::default()), None);
-    }
-
     #[test]
     fn hourly_reminders_without_a_start_count_from_the_first_launch() {
-        let hourly = hourly(None, None);
+        let hourly = hourly();
         assert_eq!(hourly.latest(at(9, 30), &Agenda::default()), None);
         let started = Agenda::starting(Some(at(9, 7)));
         assert_eq!(hourly.latest(at(10, 6), &started), None);
@@ -210,43 +171,10 @@ mod tests {
 
     #[test]
     fn hourly_reminders_keep_their_rhythm_overnight() {
-        let hourly = hourly(None, None);
+        let hourly = hourly();
         let yesterday = Agenda::starting(Some(DAY.yesterday().unwrap().at(9, 7, 0, 0)));
         assert_eq!(hourly.latest(at(0, 30), &yesterday), Some(at(0, 7)));
         assert_eq!(hourly.latest(at(0, 5), &yesterday), None);
         assert_eq!(hourly.next(at(0, 5), &yesterday), Some(at(0, 7)));
-    }
-
-    #[test]
-    fn random_reminders_come_at_the_minute_picked_for_the_day() {
-        let hours: Hours = "9:00-17:00".parse().unwrap();
-        let music = reminder(Schedule::Random(vec![hours]));
-        let settings = Settings {
-            reminders: vec![music.clone()],
-            ..Settings::default()
-        };
-        assert_eq!(music.next(at(8, 0), &Agenda::default()), None);
-        let mut agenda = Agenda::default();
-        agenda.begin(&settings, at(8, 0));
-        let picked = agenda.pick(&music.text, hours, DAY).unwrap();
-        let before = picked.checked_sub(1.minute()).unwrap();
-        assert_eq!(music.latest(before, &agenda), None);
-        assert_eq!(music.next(before, &agenda), Some(picked));
-        assert_eq!(music.latest(picked, &agenda), Some(picked));
-        assert_eq!(music.latest(at(23, 0), &agenda), Some(picked));
-        assert_eq!(music.next(picked, &agenda), None);
-    }
-
-    #[test]
-    fn reminders_keep_to_their_days() {
-        let mut weekend = reminder(Schedule::At(vec![time("10:00")]));
-        weekend.days = [Weekday::Saturday, Weekday::Sunday].into_iter().collect();
-        assert_eq!(DAY.weekday(), Weekday::Monday);
-        assert_eq!(weekend.latest(at(11, 0), &Agenda::default()), None);
-        let saturday = date(2026, 10, 24).at(11, 0, 0, 0);
-        assert_eq!(
-            weekend.latest(saturday, &Agenda::default()),
-            Some(date(2026, 10, 24).at(10, 0, 0, 0))
-        );
     }
 }

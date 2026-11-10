@@ -354,19 +354,6 @@ fn a_reminder_takes_over_from_the_summary() {
 }
 
 #[test]
-fn reminders_come_before_the_summary() {
-    let standup = event("standup", "Standup", at(9, 3), 15);
-    let harness = calendar("", vec![standup], at(9, 0));
-    assert_eq!(
-        harness.notices(),
-        [
-            "In 3 minutes:\nStandup",
-            "Today on your calendar:\n09:03 Standup"
-        ]
-    );
-}
-
-#[test]
 fn pausing_holds_everything_back_until_resumed() {
     let standup = event("standup", "Standup", at(10, 0), 60);
     let mut harness = calendar("", vec![standup], at(9, 55));

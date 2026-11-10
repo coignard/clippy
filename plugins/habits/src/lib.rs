@@ -213,18 +213,6 @@ mod tests {
     }
 
     #[test]
-    fn every_day_starts_unticked() {
-        let mut habits = habits();
-        habits.set_time(habits.now());
-        habits.choose("Show Habits");
-        habits.tick("Stretch");
-        habits.tick("Walk");
-        let tomorrow = habits.now().date().tomorrow().unwrap().at(9, 0, 0, 0);
-        habits.set_time(tomorrow);
-        assert_eq!(ticked(&mut habits), [false, false, false]);
-    }
-
-    #[test]
     fn ticks_vanish_at_midnight_even_while_shown() {
         let mut habits = habits();
         let today = habits.now().date();

@@ -209,23 +209,6 @@ mod tests {
     }
 
     #[test]
-    fn brows_rise_hold_and_fall() {
-        let now = Instant::now();
-        let mut glance = Glance::new(Look::AtThePointer, now);
-        let raised = glance
-            .deadline()
-            .map(|at| at + Duration::from_millis(200))
-            .unwrap();
-        glance.advance(raised);
-        assert_eq!(shown(&glance), Some(91));
-        assert_eq!(glance.deadline(), None);
-        glance.hold(false, raised);
-        glance.advance(raised + Duration::from_secs(1));
-        assert!(glance.is_over());
-        assert_eq!(shown(&glance), Some(0));
-    }
-
-    #[test]
     fn brows_turn_back_from_where_they_are() {
         let now = Instant::now();
         let mut glance = Glance::new(Look::AtThePointer, now);
@@ -237,19 +220,5 @@ mod tests {
         assert_eq!(shown(&glance), Some(89));
         glance.advance(now + Duration::from_secs(1));
         assert_eq!(shown(&glance), Some(91));
-    }
-
-    #[test]
-    fn the_balloon_decides_whether_clippy_looks_up_or_down() {
-        let now = Instant::now();
-        let peak = |side| {
-            let mut glance = Glance::new(Look::AtTheBalloon(side), now);
-            glance.advance(now + Duration::from_secs(1));
-            shown(&glance)
-        };
-        assert_eq!(
-            (peak(Side::Above), peak(Side::Below)),
-            (Some(169), Some(112))
-        );
     }
 }

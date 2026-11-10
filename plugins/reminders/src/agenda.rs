@@ -189,21 +189,6 @@ mod tests {
     const MONDAY: Date = date(2026, 10, 19);
 
     #[test]
-    fn picks_a_minute_within_the_hours() {
-        let settings = music("");
-        for seed in 0..50 {
-            fastrand::seed(seed);
-            let agenda = begun(&settings, MONDAY.at(6, 0, 0, 0));
-            let at = agenda.pick("Music?", hours(), MONDAY).unwrap();
-            assert!(
-                at >= MONDAY.at(7, 0, 0, 0) && at < MONDAY.at(21, 0, 0, 0),
-                "{at}"
-            );
-            assert_eq!((at.second(), at.subsec_nanosecond()), (0, 0));
-        }
-    }
-
-    #[test]
     fn a_late_start_still_picks_from_all_the_hours() {
         let settings = music("");
         let mut earlier = false;

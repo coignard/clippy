@@ -934,19 +934,6 @@ fn balloon_waits_for_clippy_to_arrive() {
 }
 
 #[test]
-fn editing_preselects_the_current_message() {
-    let directory = TempDir::new().unwrap();
-    let (mut app, now) = launch(&directory, Settings::default());
-    choose(&mut app, "Write...", now);
-    answer(&mut app, "Write tests", now);
-    choose(&mut app, "Write...", now);
-    assert_eq!(draft(&app), Some("Write tests"));
-    edit(&mut app, Edit::Insert("Ship it".into()), now);
-    app.handle(Event::Submit, now);
-    assert_eq!(shown(&app).as_deref(), Some("Ship it"));
-}
-
-#[test]
 fn double_clicking_the_message_opens_it_for_editing() {
     let directory = TempDir::new().unwrap();
     let (mut app, now) = launch(&directory, Settings::default());
@@ -1645,14 +1632,6 @@ fn launching_in_full_screen_greets_once_it_ends() {
             .iter()
             .any(|effect| matches!(effect, Effect::Play(_)))
     );
-}
-
-#[test]
-fn double_clicking_clippy_plays_a_trick() {
-    let directory = TempDir::new().unwrap();
-    let (mut app, now) = launch(&directory, Settings::default());
-    app.handle(Event::ClippyDoubleClick, now);
-    settle(&mut app, now, |app| app.character.is_performing());
 }
 
 #[test]

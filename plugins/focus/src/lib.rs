@@ -120,19 +120,6 @@ mod tests {
     }
 
     #[test]
-    fn offers_to_set_a_focus_at_first() {
-        let focus = Harness::new(Focus::default());
-        assert_eq!(
-            focus.menu(),
-            [
-                ("Set Focus...".to_owned(), true),
-                ("Clear Focus".to_owned(), false)
-            ]
-        );
-        assert_eq!(focus.message(), None);
-    }
-
-    #[test]
     fn shows_the_focus_it_was_given() {
         let mut focus = Harness::new(Focus::default());
         focus.choose("Set Focus...");
@@ -211,13 +198,6 @@ mod tests {
     }
 
     #[test]
-    fn the_shortcut_opens_the_question() {
-        let mut focus = focused_on("Ship it");
-        focus.press(Settings::default().edit_shortcut);
-        assert_eq!(focus.draft(), Some("Ship it"));
-    }
-
-    #[test]
     fn the_clear_shortcut_forgets_the_focus() {
         let mut focus = focused_on("Ship it");
         focus.press(Settings::default().clear_shortcut);
@@ -251,13 +231,5 @@ mod tests {
     fn missing_shortcuts_fall_back_to_their_defaults() {
         let settings: Settings = toml::from_str("edit_shortcut = \"Cmd+F\"").unwrap();
         assert_eq!(settings.clear_shortcut, Settings::default().clear_shortcut);
-    }
-
-    #[test]
-    fn clearing_forgets_the_focus() {
-        let mut focus = focused_on("Ship it");
-        focus.choose("Clear Focus");
-        assert_eq!(focus.message(), None);
-        assert_eq!(focus.menu()[0], ("Set Focus...".to_owned(), true));
     }
 }

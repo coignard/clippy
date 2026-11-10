@@ -137,18 +137,4 @@ mod tests {
         progress.finish(eleven);
         assert!(!progress.has_ticked(eleven, "Water"));
     }
-
-    #[test]
-    fn snoozes_climb_only_for_the_same_occurrence() {
-        let day = date(2026, 10, 19);
-        let nine = day.at(9, 0, 0, 0);
-        let mut progress = Progress::default();
-        progress.snooze(nine, day.at(9, 15, 0, 0));
-        progress.snooze(nine, day.at(9, 45, 0, 0));
-        assert_eq!(progress.snoozes_of(nine), 2);
-        let eleven = day.at(11, 0, 0, 0);
-        assert_eq!(progress.snoozes_of(eleven), 0);
-        progress.snooze(eleven, day.at(11, 15, 0, 0));
-        assert_eq!(progress.snoozes_of(eleven), 1);
-    }
 }

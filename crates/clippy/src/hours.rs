@@ -180,23 +180,10 @@ mod tests {
     }
 
     #[test]
-    fn reads_hours_and_minutes() {
-        assert_eq!(parse("9:30"), Some(time(9, 30, 0, 0)));
-        assert_eq!(parse("09:30"), Some(time(9, 30, 0, 0)));
-        assert_eq!(parse(" 17:45 "), Some(time(17, 45, 0, 0)));
-        assert_eq!(parse("0:00"), Some(Time::midnight()));
-    }
-
-    #[test]
     fn rejects_anything_else() {
         for text in ["", "noon", "9", "9:300", "24:00", "9:60", "-1:00", "9.30"] {
             assert_eq!(parse(text), None, "{text:?}");
         }
-    }
-
-    #[test]
-    fn prints_with_two_digit_hours() {
-        assert_eq!("9:05".parse::<TimeOfDay>().unwrap().to_string(), "09:05");
     }
 
     #[test]

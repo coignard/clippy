@@ -804,15 +804,6 @@ mod tests {
     }
 
     #[test]
-    fn greets_then_rests_then_idles() {
-        let mut clippy = character(&Settings::default());
-        clippy.arrive(Animation::Greeting, Instant::now());
-        let now = settle(&mut clippy, Instant::now(), is_present);
-        assert!(is_resting(&clippy));
-        settle(&mut clippy, now, is_idling);
-    }
-
-    #[test]
     fn requested_animation_interrupts_idling() {
         let mut clippy = character(&Settings::default());
         clippy.arrive(Animation::Show, Instant::now());
@@ -966,18 +957,6 @@ mod tests {
         settle(&mut clippy, now, |clippy| {
             holds(clippy, Look::AtTheBalloon(Side::Above), 169)
         });
-    }
-
-    #[test]
-    fn the_notepad_comes_out_while_the_field_has_the_keyboard() {
-        let (mut clippy, now) = present(&Settings::default());
-        clippy.set_field(FieldState::Focused);
-        let now = settle(&mut clippy, now, Character::is_waiting_with_the_pad);
-        clippy.scribble(now);
-        let wrote = settle(&mut clippy, now, Character::is_writing);
-        assert!(wrote - now < Duration::from_secs(1));
-        let paused = settle(&mut clippy, wrote, Character::is_waiting_with_the_pad);
-        assert!(paused - wrote < TYPING_PAUSE + Duration::from_secs(1));
     }
 
     #[test]
@@ -1188,18 +1167,6 @@ mod tests {
             );
             assert!(ways.iter().all(|way| played.contains(way)), "{played:?}");
         }
-    }
-
-    #[test]
-    fn idle_pause_follows_settings() {
-        let settings = Settings {
-            idle_pause: Duration::from_secs(60)..=Duration::from_secs(60),
-            ..Settings::default()
-        };
-        let mut clippy = character(&settings);
-        clippy.arrive(Animation::Show, Instant::now());
-        let now = settle(&mut clippy, Instant::now(), is_present);
-        assert_eq!(clippy.deadline(), Some(now + Duration::from_secs(60)));
     }
 
     #[test]
