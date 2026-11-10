@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A checklist asked for while a question is open shows instead of opening unseen behind the question
+
 ## 0.1.5
 
 ### Changed

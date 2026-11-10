@@ -481,6 +481,9 @@ impl Plugins {
             list,
             press,
         });
-        self.checklists += usize::from(self.showing.is_some());
+        if self.showing.is_some() {
+            self.checklists += 1;
+            self.dismiss();
+        }
     }
 }

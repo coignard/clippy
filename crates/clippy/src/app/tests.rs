@@ -2661,3 +2661,18 @@ fn a_list_hides_on_its_own_shortcut_before_any_menu_item_gets_it() {
     app.handle(Event::Shortcut(ERASE), now);
     assert_eq!(shown(&app), None);
 }
+
+#[test]
+fn a_checklist_asked_for_puts_an_open_question_away() {
+    let directory = TempDir::new().unwrap();
+    let mut app = App::builder().plugin::<Note>().plugin::<Packing>().build(
+        enabling(&["Note", "Packing"]),
+        Storage::new(directory.path()),
+    );
+    app.place(CLIPPY, SCREEN);
+    let (mut app, now) = start(app);
+    app.handle(Event::Shortcut(WRITE), now);
+    app.handle(Event::Shortcut(PACK), now);
+    assert_eq!(draft(&app), None);
+    assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", UNTICKED)]);
+}
