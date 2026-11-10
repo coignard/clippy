@@ -45,6 +45,7 @@ impl Harness {
     pub fn with_settings<P: Plugin>(plugin: P, settings: P::Settings) -> Self {
         let mut plugins = Plugins::default();
         plugins.install(Box::new(Installed::new(plugin, settings)));
+        plugins.set_uncovered(true);
         let instant = Instant::now();
         let mut character = Character::new(&Settings::default(), Rng::with_seed(0));
         character.arrive(Animation::Show, instant);

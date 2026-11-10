@@ -5,6 +5,7 @@
 ### Fixed
 
 - A checklist asked for while a question is open shows instead of opening unseen behind the question
+- A checklist's shortcut brings the checklist out from under a reminder instead of closing it unseen
 
 ## 0.1.5
 

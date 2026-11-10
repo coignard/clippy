@@ -2676,3 +2676,24 @@ fn a_checklist_asked_for_puts_an_open_question_away() {
     assert_eq!(draft(&app), None);
     assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", UNTICKED)]);
 }
+
+#[test]
+fn the_shortcut_brings_a_checklist_out_from_under_a_notice() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(9, 59);
+    let mut app = App::builder()
+        .plugin::<Chores>()
+        .plugin::<Packing>()
+        .clock(day.clock())
+        .build(
+            enabling(&["Chores", "Packing"]),
+            Storage::new(directory.path()),
+        );
+    app.place(CLIPPY, SCREEN);
+    app.handle(Event::Launch, day.origin);
+    let now = settle(&mut app, day.origin, App::is_present);
+    app.handle(Event::Shortcut(PACK), now);
+    let now = settle(&mut app, now, noticed);
+    app.handle(Event::Shortcut(PACK), now);
+    assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", UNTICKED)]);
+}

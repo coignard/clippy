@@ -430,7 +430,7 @@ impl App {
         }
         let covered = self.notices.is_displayed();
         let present = self.is_present();
-        self.plugins.set_prompt_shown(present && !covered);
+        self.plugins.set_uncovered(present && !covered);
         if let Some(prompt) = self.plugins.prompt_mut() {
             if appeared && self.focused {
                 prompt.request_focus();

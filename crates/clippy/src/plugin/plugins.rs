@@ -45,7 +45,7 @@ pub(crate) struct Plugins {
     showing: Option<Showing>,
     checklists: usize,
     copies: Vec<String>,
-    prompt_shown: bool,
+    uncovered: bool,
 }
 
 struct Asking {
@@ -352,8 +352,8 @@ impl Plugins {
         self.close_empty_list();
     }
 
-    pub(crate) fn set_prompt_shown(&mut self, shown: bool) {
-        self.prompt_shown = shown;
+    pub(crate) fn set_uncovered(&mut self, uncovered: bool) {
+        self.uncovered = uncovered;
     }
 
     pub(crate) fn take_copies(&mut self) -> Vec<String> {
@@ -415,7 +415,7 @@ impl Plugins {
         character: &mut Character,
         moment: Moment,
     ) {
-        let question_shown = self.asker() == Some(plugin) && self.prompt_shown;
+        let question_shown = self.asker() == Some(plugin) && self.uncovered;
         let Some(installed) = self.installed.get_mut(plugin) else {
             return;
         };
@@ -470,7 +470,7 @@ impl Plugins {
     }
 
     fn toggle_checklist(&mut self, plugin: usize, now: DateTime) {
-        if self.lister() == Some(plugin) {
+        if self.lister() == Some(plugin) && self.uncovered {
             self.showing = None;
             return;
         }
