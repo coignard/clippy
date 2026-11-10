@@ -19,8 +19,6 @@ use clippy::shortcut::{Key, Modifiers, Shortcut};
 use global_hotkey::hotkey::{Code, HotKey, Modifiers as HotKeyModifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use objc2::MainThreadMarker;
-use objc2::runtime::AnyObject;
-use objc2_app_kit::NSApplication;
 
 use crate::delegate::Delegate;
 
@@ -82,9 +80,7 @@ fn deliver(event: GlobalHotKeyEvent) {
         log::warn!("A hot key arrived off the main thread");
         return;
     };
-    let delegate = NSApplication::sharedApplication(mtm).delegate();
-    let delegate: Option<&AnyObject> = delegate.as_deref().map(AsRef::as_ref);
-    if let Some(delegate) = delegate.and_then(AnyObject::downcast_ref::<Delegate>) {
+    if let Some(delegate) = Delegate::shared(mtm) {
         delegate.hot_key_pressed(event.id());
     }
 }

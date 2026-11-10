@@ -14,6 +14,7 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 use std::fmt;
 use std::str::FromStr;
 
@@ -72,16 +73,8 @@ impl Default for Settings {
             only_calendars: Vec::new(),
             ignored_calendars: Vec::new(),
             show_in_full_screen: true,
-            hide_shortcut: Shortcut {
-                modifiers: Modifiers::COMMAND.union(Modifiers::SHIFT),
-                key: Key::Delete,
-            },
-            check_shortcut: Shortcut {
-                modifiers: Modifiers::COMMAND
-                    .union(Modifiers::OPTION)
-                    .union(Modifiers::SHIFT),
-                key: Key::Delete,
-            },
+            hide_shortcut: Shortcut::new(Modifiers::COMMAND_SHIFT, Key::Delete),
+            check_shortcut: Shortcut::new(Modifiers::COMMAND_OPTION_SHIFT, Key::Delete),
         }
     }
 }
@@ -145,19 +138,7 @@ impl fmt::Display for Lead {
     }
 }
 
-impl TryFrom<String> for Lead {
-    type Error = ParseLeadError;
-
-    fn try_from(text: String) -> Result<Self, Self::Error> {
-        text.parse()
-    }
-}
-
-impl From<Lead> for String {
-    fn from(lead: Lead) -> Self {
-        lead.to_string()
-    }
-}
+clippy::serde_as_text!(Lead);
 
 #[cfg(test)]
 mod tests {

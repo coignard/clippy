@@ -14,6 +14,7 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 #![forbid(unsafe_code)]
 
 mod settings;
@@ -23,17 +24,16 @@ use std::ops::Not;
 
 use clippy::calendar::{Agenda, Appointment};
 use clippy::graphics::printable;
-use clippy::hours::TimeOfDay;
+use clippy::hours::{TimeOfDay, midnight_after};
 use clippy::{Context, MenuItem, Message, Notice, Plugin, Urgency};
 use jiff::SignedDuration;
-use jiff::civil::{Date, DateTime, Time};
+use jiff::civil::{Date, DateTime};
 use serde::{Deserialize, Serialize};
 
 pub use settings::Settings;
 
 use settings::RemindWith;
 
-const PAUSE: SignedDuration = SignedDuration::from_hours(1);
 const INSTANT_EVENT: SignedDuration = SignedDuration::from_mins(5);
 const SECOND: SignedDuration = SignedDuration::from_secs(1);
 const MINUTE: SignedDuration = SignedDuration::from_mins(1);
@@ -267,36 +267,6 @@ impl Calendar {
     fn is_paused(&self, now: DateTime) -> bool {
         self.paused_until.is_some_and(|until| now < until)
     }
-
-    fn pausing(&self, now: DateTime) -> Vec<MenuItem<Action>> {
-        match self.paused_until.filter(|&until| now < until) {
-            Some(until) => {
-                let when = if until == midnight_after(now) {
-                    "Tomorrow".to_owned()
-                } else {
-                    TimeOfDay::from(until.time()).to_string()
-                };
-                vec![
-                    MenuItem::label(format!("Paused Until {when}")),
-                    MenuItem::new("Resume Reminders", Action::Resume),
-                ]
-            }
-            None => vec![
-                MenuItem::new(
-                    "Pause for an Hour",
-                    Action::Pause {
-                        until: now.saturating_add(PAUSE),
-                    },
-                ),
-                MenuItem::new(
-                    "Pause Until Tomorrow",
-                    Action::Pause {
-                        until: midnight_after(now),
-                    },
-                ),
-            ],
-        }
-    }
 }
 
 impl Plugin for Calendar {
@@ -368,7 +338,13 @@ impl Plugin for Calendar {
             };
             items.push(MenuItem::new(title, Action::ShowCurrent));
         }
-        items.extend(self.pausing(now));
+        let pause = |until| Action::Pause { until };
+        items.extend(MenuItem::pausing(
+            self.paused_until,
+            now,
+            pause,
+            Action::Resume,
+        ));
         items
     }
 
@@ -590,10 +566,6 @@ fn expiry(appointment: &Appointment) -> DateTime {
     } else {
         appointment.start.saturating_add(INSTANT_EVENT)
     }
-}
-
-fn midnight_after(now: DateTime) -> DateTime {
-    TimeOfDay::from(Time::midnight()).next_after(now)
 }
 
 #[cfg(test)]

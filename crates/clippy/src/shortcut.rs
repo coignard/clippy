@@ -215,6 +215,17 @@ const SHIFTED_KEYS: [(Key, char); 21] = [
     (Key::Grave, '~'),
 ];
 
+impl Modifiers {
+    pub const COMMAND_SHIFT: Self = Self::COMMAND.union(Self::SHIFT);
+    pub const COMMAND_OPTION_SHIFT: Self = Self::COMMAND_SHIFT.union(Self::OPTION);
+}
+
+impl Shortcut {
+    pub const fn new(modifiers: Modifiers, key: Key) -> Self {
+        Self { modifiers, key }
+    }
+}
+
 impl Key {
     pub fn character(self) -> Option<char> {
         TYPED_KEYS
@@ -309,19 +320,7 @@ impl fmt::Display for Shortcut {
     }
 }
 
-impl TryFrom<String> for Shortcut {
-    type Error = ParseShortcutError;
-
-    fn try_from(text: String) -> Result<Self, Self::Error> {
-        text.parse()
-    }
-}
-
-impl From<Shortcut> for String {
-    fn from(shortcut: Shortcut) -> Self {
-        shortcut.to_string()
-    }
-}
+crate::serde_as_text!(Shortcut);
 
 #[cfg(test)]
 mod tests {

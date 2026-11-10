@@ -125,16 +125,8 @@ impl Default for Settings {
             quiet_hours: Vec::new(),
             snooze: Snoozes::default(),
             show_in_full_screen: true,
-            hide_shortcut: Shortcut {
-                modifiers: Modifiers::COMMAND.union(Modifiers::SHIFT),
-                key: Key::Delete,
-            },
-            check_shortcut: Shortcut {
-                modifiers: Modifiers::COMMAND
-                    .union(Modifiers::OPTION)
-                    .union(Modifiers::SHIFT),
-                key: Key::Delete,
-            },
+            hide_shortcut: Shortcut::new(Modifiers::COMMAND_SHIFT, Key::Delete),
+            check_shortcut: Shortcut::new(Modifiers::COMMAND_OPTION_SHIFT, Key::Delete),
         }
     }
 }

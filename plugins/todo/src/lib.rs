@@ -22,10 +22,6 @@ use clippy::{Context, MenuItem, Plugin, Question};
 use jiff::civil::DateTime;
 use serde::{Deserialize, Serialize};
 
-const COMMAND_OPTION_SHIFT: Modifiers = Modifiers::COMMAND
-    .union(Modifiers::OPTION)
-    .union(Modifiers::SHIFT);
-
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Todo {
@@ -50,14 +46,8 @@ pub enum Action {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            show_shortcut: Shortcut {
-                modifiers: COMMAND_OPTION_SHIFT,
-                key: Key::T,
-            },
-            hide_shortcut: Shortcut {
-                modifiers: Modifiers::COMMAND.union(Modifiers::SHIFT),
-                key: Key::Delete,
-            },
+            show_shortcut: Shortcut::new(Modifiers::COMMAND_OPTION_SHIFT, Key::T),
+            hide_shortcut: Shortcut::new(Modifiers::COMMAND_SHIFT, Key::Delete),
         }
     }
 }

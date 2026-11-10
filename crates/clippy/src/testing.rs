@@ -22,7 +22,7 @@ use jiff::civil::{Date, DateTime, date};
 
 use crate::animation::Animation;
 use crate::app::{Command, Moment};
-use crate::balloon::{Edit, Motion, Prompt};
+use crate::balloon::{Content, Edit, Motion, Prompt};
 use crate::calendar::Agenda;
 use crate::character::Character;
 use crate::menu::Entry;
@@ -169,12 +169,10 @@ impl Harness {
 
     pub fn checklist(&mut self) -> Option<(String, Vec<(String, bool)>)> {
         self.plugins.refresh_checklist(self.moment.local);
-        let (title, items) = self.plugins.checklist()?;
-        let items = items
-            .iter()
-            .map(|(label, state)| (label.clone(), state.checked))
-            .collect();
-        Some((title.to_owned(), items))
+        match self.plugins.checklist()? {
+            Content::Checklist { title, items, .. } => Some((title.to_owned(), items.to_vec())),
+            _ => None,
+        }
     }
 
     pub fn tick(&mut self, label: &str) {
@@ -185,9 +183,8 @@ impl Harness {
             .iter()
             .position(|(item, _)| item == label)
             .unwrap_or_else(|| panic!("the checklist should have an item {label:?}"));
-        self.plugins.press_checklist(item);
-        self.plugins
-            .release_checklist(true, &mut self.character, self.moment);
+        self.plugins.press(item);
+        self.plugins.release(true, &mut self.character, self.moment);
     }
 
     pub fn question(&self) -> Option<&str> {
@@ -231,7 +228,7 @@ impl Harness {
     pub fn asked_tasks(&self) -> Vec<String> {
         self.plugins
             .prompt()
-            .map(|prompt| prompt.tasks().map(|(label, _)| label.to_owned()).collect())
+            .map(|prompt| prompt.tasks().map(str::to_owned).collect())
             .unwrap_or_default()
     }
 
@@ -241,9 +238,8 @@ impl Harness {
             .iter()
             .position(|task| task == label)
             .unwrap_or_else(|| panic!("the question should list a task {label:?}"));
-        self.plugins.press_asked_task(task);
-        self.plugins
-            .release_asked_task(true, &mut self.character, self.moment);
+        self.plugins.press(task);
+        self.plugins.release(true, &mut self.character, self.moment);
     }
 
     pub fn type_in(&mut self, text: &str) {
@@ -295,6 +291,7 @@ impl Harness {
     fn items(&self) -> Vec<Entry> {
         self.plugins
             .menu(self.moment.local)
+            .into_iter()
             .flat_map(|submenu| match submenu {
                 Entry::Submenu { entries, .. } => entries,
                 Entry::Item { .. } | Entry::Separator => Vec::new(),

@@ -148,15 +148,21 @@ mod tests {
 
     use super::*;
     use crate::balloon::layout::TIP_REACH;
-    use crate::balloon::{Checkbox, Edit, Motion};
+    use crate::balloon::{Asked, Edit, Motion, Press};
     use crate::graphics::{Bitmap, TRANSPARENT};
 
     fn prompt(text: &str) -> Prompt {
-        let mut prompt = Prompt::new(
-            "What are you focusing on?".into(),
-            text.into(),
-            Instant::now(),
-        );
+        listing(text, &[])
+    }
+
+    fn listing(draft: &str, tasks: &[&str]) -> Prompt {
+        let asked = Asked {
+            question: "What are you focusing on?".into(),
+            draft: draft.into(),
+            tasks: tasks.iter().map(|&task| task.to_owned()).collect(),
+            ..Asked::default()
+        };
+        let mut prompt = Prompt::new(asked, Instant::now());
         prompt.edit(Edit::Move(Motion::End), Instant::now());
         prompt
     }
@@ -253,19 +259,19 @@ mod tests {
 
     const AGAIN: &str = "Don't show me this reminder again";
 
-    fn notice<'a>(text: &'a str, tasks: &'a [(String, Checkbox)]) -> Layout<'a> {
+    fn notice<'a>(text: &'a str, tasks: &'a [(String, bool)]) -> Layout<'a> {
         Layout::new(Content::Notice {
             text,
             tasks,
-            checkbox: Some((AGAIN, Checkbox::default())),
+            checkbox: Some((AGAIN, false)),
+            press: Press::default(),
         })
     }
 
-    fn errands() -> Vec<(String, Checkbox)> {
+    fn errands() -> Vec<(String, bool)> {
         ["Post the letter", "Buy bread"]
-            .into_iter()
-            .map(|task| (task.to_owned(), Checkbox::default()))
-            .collect()
+            .map(|task| (task.to_owned(), false))
+            .to_vec()
     }
 
     #[test]
@@ -312,30 +318,21 @@ mod tests {
             text: "Errands:",
             tasks: &tasks,
             checkbox: None,
+            press: Press::default(),
         });
         assert_eq!(without_box.separator(Placement::TopLeft), None);
         let checklist = Layout::new(Content::Checklist {
             title: "Pack:",
             items: &tasks,
+            press: Press::default(),
         });
         assert_eq!(checklist.separator(Placement::TopLeft), None);
-        let box_alone = Layout::new(Content::Notice {
-            text: "",
-            tasks: &[],
-            checkbox: Some((AGAIN, Checkbox::default())),
-        });
-        assert_eq!(box_alone.separator(Placement::TopLeft), None);
-    }
-
-    fn listing(tasks: &[&str]) -> Prompt {
-        let mut prompt = prompt("");
-        prompt.set_tasks(tasks.iter().map(|&task| task.to_owned()).collect());
-        prompt
+        assert_eq!(notice("", &[]).separator(Placement::TopLeft), None);
     }
 
     #[test]
     fn a_line_sets_the_field_apart_from_the_tasks_above_it() {
-        let prompt = listing(&["Post the letter", "Buy bread"]);
+        let prompt = listing("", &["Post the letter", "Buy bread"]);
         let placement = Placement::TopLeft;
         let layout = Layout::new(Content::Prompt {
             prompt: &prompt,
@@ -361,7 +358,7 @@ mod tests {
 
     #[test]
     fn a_list_without_its_field_drops_the_line_too() {
-        let mut prompt = listing(&["Post the letter", "Buy bread"]);
+        let mut prompt = listing("", &["Post the letter", "Buy bread"]);
         let placement = Placement::TopLeft;
         let with_field = Layout::new(Content::Prompt {
             prompt: &prompt,
@@ -387,7 +384,7 @@ mod tests {
 
     #[test]
     fn a_field_with_nothing_above_it_asks_its_question_without_a_line() {
-        let prompt = listing(&[]);
+        let prompt = listing("", &[]);
         let placement = Placement::TopLeft;
         let layout = Layout::new(Content::Prompt {
             prompt: &prompt,
@@ -401,7 +398,7 @@ mod tests {
 
     #[test]
     fn a_pressed_task_shows_its_box_pushed_in_and_leaves_once_released() {
-        let mut prompt = listing(&["Post the letter", "Buy bread"]);
+        let mut prompt = listing("", &["Post the letter", "Buy bread"]);
         prompt.press_task(1);
         let layout = Layout::new(Content::Prompt {
             prompt: &prompt,
@@ -417,7 +414,7 @@ mod tests {
         assert_eq!(prompt.tasks().count(), 2);
         prompt.press_task(0);
         assert_eq!(prompt.release_task(true), Some(0));
-        let left: Vec<&str> = prompt.tasks().map(|(task, _)| task).collect();
+        let left: Vec<&str> = prompt.tasks().collect();
         assert_eq!(left, ["Buy bread"]);
     }
 

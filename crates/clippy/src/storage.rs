@@ -33,7 +33,7 @@ pub struct Storage {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum StorageError {
+pub(crate) enum StorageError {
     #[error("{}: {source}", .path.display())]
     Io { path: PathBuf, source: io::Error },
     #[error("{}: {source}", .path.display())]

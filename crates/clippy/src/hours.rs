@@ -47,6 +47,10 @@ pub enum ParseHoursError {
     Empty(String),
 }
 
+pub fn midnight_after(at: DateTime) -> DateTime {
+    TimeOfDay(Time::midnight()).next_after(at)
+}
+
 impl TimeOfDay {
     pub fn time(self) -> Time {
         self.0
@@ -89,19 +93,7 @@ impl fmt::Display for TimeOfDay {
     }
 }
 
-impl TryFrom<String> for TimeOfDay {
-    type Error = ParseTimeOfDayError;
-
-    fn try_from(text: String) -> Result<Self, Self::Error> {
-        text.parse()
-    }
-}
-
-impl From<TimeOfDay> for String {
-    fn from(time: TimeOfDay) -> Self {
-        time.to_string()
-    }
-}
+crate::serde_as_text!(TimeOfDay);
 
 impl Hours {
     pub fn start(self) -> TimeOfDay {
@@ -151,19 +143,7 @@ impl fmt::Display for Hours {
     }
 }
 
-impl TryFrom<String> for Hours {
-    type Error = ParseHoursError;
-
-    fn try_from(text: String) -> Result<Self, Self::Error> {
-        text.parse()
-    }
-}
-
-impl From<Hours> for String {
-    fn from(hours: Hours) -> Self {
-        hours.to_string()
-    }
-}
+crate::serde_as_text!(Hours);
 
 #[cfg(test)]
 mod tests {

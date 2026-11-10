@@ -17,14 +17,11 @@
 
 #![forbid(unsafe_code)]
 
+use clippy::hours::midnight_after;
 use clippy::shortcut::{Key, Modifiers, Shortcut};
 use clippy::{Checklist, Context, MenuItem, Plugin};
-use jiff::civil::{Date, DateTime, Time};
+use jiff::civil::{Date, DateTime};
 use serde::{Deserialize, Serialize};
-
-const COMMAND_OPTION_SHIFT: Modifiers = Modifiers::COMMAND
-    .union(Modifiers::OPTION)
-    .union(Modifiers::SHIFT);
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -51,10 +48,7 @@ pub enum Action {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            show_shortcut: Shortcut {
-                modifiers: COMMAND_OPTION_SHIFT,
-                key: Key::H,
-            },
+            show_shortcut: Shortcut::new(Modifiers::COMMAND_OPTION_SHIFT, Key::H),
             habits: Vec::new(),
         }
     }
@@ -102,11 +96,7 @@ impl Plugin for Habits {
     }
 
     fn changes_at(&self, _settings: &Settings, now: DateTime) -> Option<DateTime> {
-        let today = now.date();
-        if self.done_on(today).is_empty() {
-            return None;
-        }
-        Some(today.tomorrow().ok()?.to_datetime(Time::midnight()))
+        (!self.done_on(now.date()).is_empty()).then(|| midnight_after(now))
     }
 
     fn perform(&mut self, action: Action, cx: &mut Context<'_, Self>) {

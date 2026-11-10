@@ -66,19 +66,7 @@ impl fmt::Display for Interval {
     }
 }
 
-impl TryFrom<String> for Interval {
-    type Error = ParseIntervalError;
-
-    fn try_from(text: String) -> Result<Self, Self::Error> {
-        text.parse()
-    }
-}
-
-impl From<Interval> for String {
-    fn from(interval: Interval) -> Self {
-        interval.to_string()
-    }
-}
+clippy::serde_as_text!(Interval);
 
 #[cfg(test)]
 mod tests {

@@ -1,3 +1,20 @@
+// This file is part of Clippy.
+//
+// Copyright (c) 2026  René Coignard <contact@renecoignard.com>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 mod builder;
 mod notices;
 mod visibility;
@@ -183,11 +200,11 @@ impl App {
         }
         let questions = self.plugins.questions_asked();
         let checklists = self.plugins.checklists_shown();
-        let checking = matches!(event, Event::Shortcut(shortcut) if self.notices.check_shortcut() == Some(shortcut));
-        let dismissing = checking
-            || matches!(event, Event::Shortcut(shortcut) if self.notices.shortcut() == Some(shortcut));
-        let closing = !dismissing
-            && matches!(event, Event::Shortcut(shortcut) if self.question_shortcut() == Some(shortcut));
+        let pressed =
+            |shortcut| matches!(event, Event::Shortcut(pressed) if shortcut == Some(pressed));
+        let checking = pressed(self.notices.check_shortcut());
+        let dismissing = checking || pressed(self.notices.shortcut());
+        let closing = !dismissing && pressed(self.question_shortcut());
         if closing {
             self.plugins.dismiss();
         }
@@ -322,19 +339,13 @@ impl App {
                     self.plugins.double_click(&mut self.character, moment);
                 }
             }
-            Event::CheckboxPress { item } => {
-                if self.notices.is_displayed() {
-                    self.notices.press(item);
-                } else if self.plugins.prompt().is_some() {
-                    self.plugins.press_asked_task(item);
-                } else {
-                    self.plugins.press_checklist(item);
-                }
+            Event::CheckboxPress { item } if self.notices.is_displayed() => {
+                self.notices.press(item);
             }
+            Event::CheckboxPress { item } => self.plugins.press(item),
             Event::CheckboxDrag { inside } => {
                 self.notices.drag(inside);
-                self.plugins.drag_asked_task(inside);
-                self.plugins.drag_checklist(inside);
+                self.plugins.drag(inside);
             }
             Event::CheckboxRelease { inside } => {
                 match self.notices.release(inside) {
@@ -345,10 +356,7 @@ impl App {
                     }
                     None => {}
                 }
-                self.plugins
-                    .release_asked_task(inside, &mut self.character, moment);
-                self.plugins
-                    .release_checklist(inside, &mut self.character, moment);
+                self.plugins.release(inside, &mut self.character, moment);
             }
             Event::Focus => self.focused = true,
             Event::Blur => self.focused = false,
@@ -410,10 +418,10 @@ impl App {
             self.plugins.close_checklist();
         }
         self.plugins.refresh_checklist(moment.local);
-        let change = self
+        let appeared = self
             .notices
             .update(&due, self.is_present(), self.is_celebrating());
-        if change.appeared {
+        if appeared {
             self.visibility.keep(self.settings.after_summons);
             let side = self.side_of(self.notices.content());
             self.character
@@ -424,7 +432,7 @@ impl App {
         let present = self.is_present();
         self.plugins.set_prompt_shown(present && !covered);
         if let Some(prompt) = self.plugins.prompt_mut() {
-            if change.appeared && self.focused {
+            if appeared && self.focused {
                 prompt.request_focus();
             }
             if self.focused && !covered && prompt.wants_focus() {
@@ -578,10 +586,9 @@ impl App {
                 focused: self.focused,
             });
         }
-        if let Some((title, items)) = self.plugins.checklist() {
-            return Some(Content::Checklist { title, items });
-        }
-        message.map(Content::Message)
+        self.plugins
+            .checklist()
+            .or_else(|| message.map(Content::Message))
     }
 
     fn arrange<'a>(&self, content: Content<'a>) -> Option<(Layout<'a>, Placement, Rect)> {

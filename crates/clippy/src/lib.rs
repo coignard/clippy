@@ -38,7 +38,6 @@ mod storage;
 #[cfg(feature = "testing")]
 pub mod testing;
 
-pub use animation::Animation;
 pub use app::{App, Builder, Command, Effect, Event};
 pub use balloon::{Edit, Motion, Utf16Range};
 pub use character::portrait;
@@ -50,4 +49,23 @@ pub use plugin::{
 pub use scene::{BalloonScene, Field, Scene};
 pub use settings::{AfterSummons, Settings};
 pub use sound::Sound;
-pub use storage::{Storage, StorageError};
+pub use storage::Storage;
+
+#[macro_export]
+macro_rules! serde_as_text {
+    ($type:ty) => {
+        impl TryFrom<String> for $type {
+            type Error = <$type as std::str::FromStr>::Err;
+
+            fn try_from(text: String) -> Result<Self, Self::Error> {
+                text.parse()
+            }
+        }
+
+        impl From<$type> for String {
+            fn from(value: $type) -> Self {
+                value.to_string()
+            }
+        }
+    };
+}

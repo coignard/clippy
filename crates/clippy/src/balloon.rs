@@ -22,10 +22,10 @@ mod prompt;
 mod render;
 mod text_field;
 
-pub(crate) use controls::Checkbox;
+pub(crate) use controls::{Checkbox, Press};
 pub(crate) use layout::Layout;
 pub(crate) use placement::{Placement, SCREEN_MARGIN};
-pub(crate) use prompt::Prompt;
+pub(crate) use prompt::{Asked, Prompt};
 pub use text_field::{Edit, Motion, Utf16Range};
 
 #[derive(Clone, Copy)]
@@ -37,12 +37,14 @@ pub(crate) enum Content<'a> {
     },
     Notice {
         text: &'a str,
-        tasks: &'a [(String, Checkbox)],
-        checkbox: Option<(&'a str, Checkbox)>,
+        tasks: &'a [(String, bool)],
+        checkbox: Option<(&'a str, bool)>,
+        press: Press,
     },
     Checklist {
         title: &'a str,
-        items: &'a [(String, Checkbox)],
+        items: &'a [(String, bool)],
+        press: Press,
     },
 }
 
@@ -56,18 +58,31 @@ impl<'a> Content<'a> {
         }
     }
 
-    fn rows(self) -> Vec<(&'a str, Checkbox)> {
-        let listed = |items: &'a [(String, Checkbox)]| {
-            items.iter().map(|(label, state)| (label.as_str(), *state))
+    pub(crate) fn rows(self) -> Vec<(&'a str, Checkbox)> {
+        let listed = |items: &'a [(String, bool)]| {
+            items
+                .iter()
+                .map(|(label, checked)| (label.as_str(), *checked))
         };
-        match self {
+        let (rows, press): (Vec<_>, _) = match self {
             Content::Notice {
-                tasks, checkbox, ..
-            } => listed(tasks).chain(checkbox).collect(),
-            Content::Prompt { prompt, .. } => prompt.tasks().collect(),
-            Content::Checklist { items, .. } => listed(items).collect(),
-            Content::Message(_) => Vec::new(),
-        }
+                tasks,
+                checkbox,
+                press,
+                ..
+            } => (listed(tasks).chain(checkbox).collect(), press),
+            Content::Prompt { prompt, .. } => {
+                let tasks = prompt.tasks().map(|task| (task, false));
+                (tasks.collect(), prompt.task_press())
+            }
+            Content::Checklist { items, press, .. } => (listed(items).collect(), press),
+            Content::Message(_) => (Vec::new(), Press::default()),
+        };
+        let boxed = |(row, (label, checked))| {
+            let pressed = press.holds(row);
+            (label, Checkbox { checked, pressed })
+        };
+        (0..).zip(rows).map(boxed).collect()
     }
 
     fn separated_from(self) -> Option<usize> {
@@ -76,6 +91,7 @@ impl<'a> Content<'a> {
                 text,
                 tasks,
                 checkbox: Some(_),
+                ..
             } if !text.is_empty() || !tasks.is_empty() => Some(tasks.len()),
             Content::Prompt { prompt, .. } if prompt.has_tasks() && prompt.shows_field() => {
                 Some(prompt.tasks().count())

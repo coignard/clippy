@@ -25,24 +25,19 @@ use crate::plugin::{AnyPlugin, Installed, Plugin, Plugins};
 use crate::settings::Settings;
 use crate::storage::Storage;
 
+type Install = fn(&Storage) -> Box<dyn AnyPlugin>;
+
 #[derive(Default)]
 pub struct Builder {
-    available: Vec<Available>,
+    available: Vec<(&'static str, Install)>,
     clock: Option<Clock>,
-}
-
-struct Available {
-    name: &'static str,
-    install: fn(&Storage) -> Box<dyn AnyPlugin>,
 }
 
 impl Builder {
     #[must_use]
     pub fn plugin<P: Plugin>(mut self) -> Self {
-        self.available.push(Available {
-            name: P::NAME,
-            install: |storage| Box::new(Installed::<P>::load(storage)),
-        });
+        self.available
+            .push((P::NAME, |storage| Box::new(Installed::<P>::load(storage))));
         self
     }
 
@@ -71,15 +66,15 @@ impl Builder {
         let enabled = settings.plugins.as_deref().unwrap_or(&every);
         let mut plugins = Plugins::default();
         for name in enabled {
-            match self
+            let available = self
                 .available
                 .iter()
-                .find(|available| available.name.eq_ignore_ascii_case(name))
-            {
+                .find(|(known, _)| known.eq_ignore_ascii_case(name));
+            match available {
                 Some(_) if plugins.contains(name) => {
                     log::warn!("{name} is enabled more than once");
                 }
-                Some(available) => plugins.install((available.install)(&storage)),
+                Some((_, install)) => plugins.install(install(&storage)),
                 None => log::warn!("There is no plugin called {name}"),
             }
         }
@@ -95,7 +90,7 @@ impl Builder {
     fn names(&self) -> Vec<String> {
         self.available
             .iter()
-            .map(|available| available.name.to_owned())
+            .map(|&(name, _)| name.to_owned())
             .collect()
     }
 }

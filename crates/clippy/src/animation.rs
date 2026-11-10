@@ -33,7 +33,7 @@ pub(crate) use playback::Playback;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Enum, EnumString, VariantArray)]
 #[strum(ascii_case_insensitive)]
-pub enum Animation {
+pub(crate) enum Animation {
     Alert,
     CheckingSomething,
     Congratulate,

@@ -19,56 +19,34 @@ use std::mem;
 
 use jiff::civil::DateTime;
 
-use crate::assets::FONT;
 use crate::calendar::Agenda;
 use crate::character::Character;
-use crate::plugin::{Context, MenuItem, Notice, Plugin, Urgency};
-use crate::shortcut::Shortcut;
+use crate::plugin::{Answers, Context, Item, Listed, Noticed, Outcome, Plugin, Question, Said};
 use crate::storage::{Storage, StorageError};
 
-pub(crate) struct Asked {
-    pub(crate) question: String,
-    pub(crate) draft: String,
-    pub(crate) tasks: Vec<String>,
-    pub(crate) standing: bool,
-    pub(crate) shortcut: Option<Shortcut>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct Listed {
-    pub(crate) title: String,
-    pub(crate) items: Vec<(String, bool)>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Noticed {
-    pub(crate) id: String,
-    pub(crate) text: String,
-    pub(crate) tasks: Vec<(String, bool)>,
-    pub(crate) checkbox: Option<String>,
-    pub(crate) over_full_screen: bool,
-    pub(crate) shortcut: Option<Shortcut>,
-    pub(crate) check_shortcut: Option<Shortcut>,
-    pub(crate) urgency: Urgency,
-    pub(crate) celebrates: bool,
+pub(crate) enum Trigger<'a> {
+    Choose { item: usize, listed: DateTime },
+    DoubleClick,
+    Answer { text: String, shift: bool },
+    TickAsked(usize),
+    Snooze(&'a str),
+    Check(&'a str),
+    ToggleTask(&'a str, usize),
+    Toggle(usize),
 }
 
 pub(crate) trait AnyPlugin {
     fn name(&self) -> &'static str;
 
-    fn begin_day(&mut self, now: DateTime);
-
     fn reads_calendar(&self) -> bool;
+
+    fn begin_day(&mut self, now: DateTime);
 
     fn read_agenda(&mut self, agenda: &Agenda);
 
-    fn menu(&self, now: DateTime) -> Vec<MenuItem<()>>;
+    fn menu(&self, now: DateTime) -> Vec<Item>;
 
-    fn message(&self, now: DateTime) -> Option<String>;
-
-    fn answers_double_click(&self, now: DateTime) -> bool;
-
-    fn message_shortcut(&self, now: DateTime) -> Option<Shortcut>;
+    fn message(&self, now: DateTime) -> Option<Said>;
 
     fn notices(&self, now: DateTime) -> Vec<Noticed>;
 
@@ -78,52 +56,13 @@ pub(crate) trait AnyPlugin {
 
     fn changes_at(&self, now: DateTime) -> Option<DateTime>;
 
-    fn choose(
+    fn act(
         &mut self,
-        item: usize,
-        listed: DateTime,
+        trigger: Trigger<'_>,
+        question_shown: bool,
         character: &mut Character,
         now: DateTime,
-    ) -> Option<Asked>;
-
-    fn double_click(&mut self, character: &mut Character, now: DateTime) -> Option<Asked>;
-
-    fn answer(
-        &mut self,
-        answer: String,
-        shift: bool,
-        character: &mut Character,
-        now: DateTime,
-    ) -> Option<Asked>;
-
-    fn tick_asked_task(
-        &mut self,
-        task: usize,
-        character: &mut Character,
-        now: DateTime,
-    ) -> Option<Asked>;
-
-    fn snooze(&mut self, id: &str, character: &mut Character, now: DateTime) -> Option<Asked>;
-
-    fn check(&mut self, id: &str, character: &mut Character, now: DateTime) -> Option<Asked>;
-
-    fn toggle_task(
-        &mut self,
-        id: &str,
-        task: usize,
-        character: &mut Character,
-        now: DateTime,
-    ) -> Option<Asked>;
-
-    fn toggle(&mut self, item: usize, character: &mut Character, now: DateTime) -> Option<Asked>;
-
-    fn take_checklist_toggle(&mut self) -> bool;
-
-    fn take_copied(&mut self) -> Option<String>;
-
-    fn show_question(&mut self, shown: bool);
-
-    fn take_field_toggle(&mut self) -> bool;
+    ) -> Outcome;
 
     fn dismiss(&mut self);
 
@@ -136,19 +75,8 @@ pub(crate) struct Installed<P: Plugin> {
     plugin: P,
     settings: P::Settings,
     agenda: Agenda,
-    on_answer: Option<Box<dyn FnOnce(String) -> P::Action>>,
-    on_shift_answer: Option<Box<dyn FnOnce(String) -> P::Action>>,
-    on_tick: Vec<P::Action>,
-    question_shown: bool,
-    requests: Requests,
+    answers: Option<Answers<P::Action>>,
     unsaved: bool,
-}
-
-#[derive(Default)]
-struct Requests {
-    toggles_checklist: bool,
-    toggles_field: bool,
-    copied: Option<String>,
 }
 
 impl<P: Plugin> Installed<P> {
@@ -157,11 +85,7 @@ impl<P: Plugin> Installed<P> {
             plugin,
             settings,
             agenda: Agenda::default(),
-            on_answer: None,
-            on_shift_answer: None,
-            on_tick: Vec::new(),
-            question_shown: false,
-            requests: Requests::default(),
+            answers: None,
             unsaved: false,
         }
     }
@@ -180,52 +104,35 @@ impl<P: Plugin> Installed<P> {
         Self::new(plugin.unwrap_or_default(), settings)
     }
 
-    fn perform(
-        &mut self,
-        action: P::Action,
-        character: &mut Character,
-        now: DateTime,
-    ) -> Option<Asked> {
-        let mut cx = Context {
-            character,
-            settings: &self.settings,
-            question: None,
-            question_shown: self.question_shown,
-            toggles_field: false,
-            toggles_checklist: false,
-            copied: None,
-            now,
+    fn action(&mut self, trigger: Trigger<'_>, now: DateTime) -> Option<P::Action> {
+        let (plugin, settings) = (&self.plugin, &self.settings);
+        let notice = |id: &str| {
+            let mut notices = plugin.notices(settings, now).into_iter();
+            notices.find(|notice| notice.view.id == id)
         };
-        self.plugin.perform(action, &mut cx);
-        self.unsaved = true;
-        self.requests = Requests {
-            toggles_checklist: cx.toggles_checklist,
-            toggles_field: cx.toggles_field,
-            copied: cx.copied.or(self.requests.copied.take()),
-        };
-        let question = cx.question?;
-        self.on_answer = Some(question.answer);
-        self.on_shift_answer = question.shift_answer;
-        let (tasks, on_tick) = question
-            .tasks
-            .into_iter()
-            .map(|(label, on_tick)| (FONT.printable(&label).into_owned(), on_tick))
-            .unzip();
-        self.on_tick = on_tick;
-        Some(Asked {
-            question: question.text,
-            draft: question.draft,
-            tasks,
-            standing: question.standing,
-            shortcut: question.shortcut,
-        })
-    }
-
-    fn notice(&self, id: &str, now: DateTime) -> Option<Notice<P::Action>> {
-        self.plugin
-            .notices(&self.settings, now)
-            .into_iter()
-            .find(|notice| notice.id == id)
+        match trigger {
+            Trigger::Choose { item, listed } => {
+                let item = plugin.menu(settings, listed).into_iter().nth(item)?;
+                item.action.filter(|_| item.view.enabled)
+            }
+            Trigger::DoubleClick => plugin.message(settings, now)?.on_double_click,
+            Trigger::Answer { text, shift } => {
+                let answers = self.answers.take()?;
+                let answer = answers.shift_enter.filter(|_| shift);
+                Some(answer.unwrap_or(answers.enter)(text))
+            }
+            Trigger::TickAsked(task) => {
+                let ticks = &mut self.answers.as_mut()?.ticks;
+                (task < ticks.len()).then(|| ticks.remove(task))
+            }
+            Trigger::Snooze(id) => Some(notice(id)?.on_snooze),
+            Trigger::Check(id) => notice(id)?.on_check,
+            Trigger::ToggleTask(id, task) => notice(id)?.on_toggle.into_iter().nth(task),
+            Trigger::Toggle(item) => {
+                let checklist = plugin.checklist(settings, now)?;
+                checklist.on_toggle.into_iter().nth(item)
+            }
+        }
     }
 }
 
@@ -234,13 +141,13 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
         P::NAME
     }
 
+    fn reads_calendar(&self) -> bool {
+        P::READS_CALENDAR
+    }
+
     fn begin_day(&mut self, now: DateTime) {
         self.plugin.begin_day(&self.settings, now);
         self.unsaved = true;
-    }
-
-    fn reads_calendar(&self) -> bool {
-        P::READS_CALENDAR
     }
 
     fn read_agenda(&mut self, agenda: &Agenda) {
@@ -250,74 +157,24 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
         }
     }
 
-    fn menu(&self, now: DateTime) -> Vec<MenuItem<()>> {
-        self.plugin
-            .menu(&self.settings, now)
-            .into_iter()
-            .map(|item| MenuItem {
-                title: item.title,
-                action: item.action.map(drop),
-                enabled: item.enabled,
-                shortcut: item.shortcut,
-            })
-            .collect()
+    fn menu(&self, now: DateTime) -> Vec<Item> {
+        let menu = self.plugin.menu(&self.settings, now);
+        menu.into_iter().map(|item| item.view).collect()
     }
 
-    fn message(&self, now: DateTime) -> Option<String> {
-        self.plugin
-            .message(&self.settings, now)
-            .map(|message| FONT.printable(&message.text).into_owned())
-            .filter(|text| !text.is_empty())
-    }
-
-    fn answers_double_click(&self, now: DateTime) -> bool {
-        self.message(now).is_some()
-            && self
-                .plugin
-                .message(&self.settings, now)
-                .is_some_and(|message| message.on_double_click.is_some())
-    }
-
-    fn message_shortcut(&self, now: DateTime) -> Option<Shortcut> {
-        self.message(now)?;
-        self.plugin.message(&self.settings, now)?.shortcut
+    fn message(&self, now: DateTime) -> Option<Said> {
+        let message = self.plugin.message(&self.settings, now)?;
+        Some(message.view).filter(|said| !said.text.is_empty())
     }
 
     fn notices(&self, now: DateTime) -> Vec<Noticed> {
-        self.plugin
-            .notices(&self.settings, now)
-            .into_iter()
-            .map(|notice| Noticed {
-                id: notice.id,
-                text: FONT.printable(&notice.text).into_owned(),
-                tasks: notice
-                    .tasks
-                    .into_iter()
-                    .map(|task| (FONT.printable(&task.label).into_owned(), task.done))
-                    .collect(),
-                checkbox: notice
-                    .checkbox
-                    .map(|(label, _)| FONT.printable(&label).into_owned()),
-                over_full_screen: notice.over_full_screen,
-                shortcut: notice.shortcut,
-                check_shortcut: notice.check_shortcut,
-                urgency: notice.urgency,
-                celebrates: notice.celebrates,
-            })
-            .collect()
+        let notices = self.plugin.notices(&self.settings, now);
+        notices.into_iter().map(|notice| notice.view).collect()
     }
 
     fn checklist(&self, now: DateTime) -> Option<Listed> {
         let checklist = self.plugin.checklist(&self.settings, now)?;
-        Some(Listed {
-            title: FONT.printable(&checklist.title).into_owned(),
-            items: checklist
-                .items
-                .into_iter()
-                .map(|item| (FONT.printable(&item.label).into_owned(), item.checked))
-                .collect(),
-        })
-        .filter(|listed| !listed.items.is_empty())
+        Some(checklist.view).filter(|listed| !listed.items.is_empty())
     }
 
     fn bedtime(&self, now: DateTime) -> bool {
@@ -328,105 +185,40 @@ impl<P: Plugin> AnyPlugin for Installed<P> {
         self.plugin.changes_at(&self.settings, now)
     }
 
-    fn choose(
+    fn act(
         &mut self,
-        item: usize,
-        listed: DateTime,
+        trigger: Trigger<'_>,
+        question_shown: bool,
         character: &mut Character,
         now: DateTime,
-    ) -> Option<Asked> {
-        let item = self
-            .plugin
-            .menu(&self.settings, listed)
-            .into_iter()
-            .nth(item)
-            .filter(|item| item.enabled)?;
-        self.perform(item.action?, character, now)
-    }
-
-    fn double_click(&mut self, character: &mut Character, now: DateTime) -> Option<Asked> {
-        let action = self.plugin.message(&self.settings, now)?.on_double_click?;
-        self.perform(action, character, now)
-    }
-
-    fn answer(
-        &mut self,
-        answer: String,
-        shift: bool,
-        character: &mut Character,
-        now: DateTime,
-    ) -> Option<Asked> {
-        let on_answer = self.on_answer.take()?;
-        let on_shift_answer = self.on_shift_answer.take();
-        self.on_tick.clear();
-        let on_answer = on_shift_answer.filter(|_| shift).unwrap_or(on_answer);
-        self.perform(on_answer(answer), character, now)
-    }
-
-    fn tick_asked_task(
-        &mut self,
-        task: usize,
-        character: &mut Character,
-        now: DateTime,
-    ) -> Option<Asked> {
-        if task >= self.on_tick.len() {
-            return None;
+    ) -> Outcome {
+        let Some(action) = self.action(trigger, now) else {
+            return Outcome::default();
+        };
+        let mut cx = Context {
+            character,
+            settings: &self.settings,
+            now,
+            question_shown,
+            question: None,
+            outcome: Outcome::default(),
+        };
+        self.plugin.perform(action, &mut cx);
+        self.unsaved = true;
+        let Context {
+            question,
+            mut outcome,
+            ..
+        } = cx;
+        if let Some(Question { view, answers }) = question {
+            self.answers = Some(answers);
+            outcome.asked = Some(view);
         }
-        let on_tick = self.on_tick.remove(task);
-        self.perform(on_tick, character, now)
-    }
-
-    fn snooze(&mut self, id: &str, character: &mut Character, now: DateTime) -> Option<Asked> {
-        let notice = self.notice(id, now)?;
-        self.perform(notice.on_snooze, character, now)
-    }
-
-    fn check(&mut self, id: &str, character: &mut Character, now: DateTime) -> Option<Asked> {
-        let (_, on_check) = self.notice(id, now)?.checkbox?;
-        self.perform(on_check, character, now)
-    }
-
-    fn toggle_task(
-        &mut self,
-        id: &str,
-        task: usize,
-        character: &mut Character,
-        now: DateTime,
-    ) -> Option<Asked> {
-        let task = self.notice(id, now)?.tasks.into_iter().nth(task)?;
-        self.perform(task.on_toggle, character, now)
-    }
-
-    fn toggle(&mut self, item: usize, character: &mut Character, now: DateTime) -> Option<Asked> {
-        let item = self
-            .plugin
-            .checklist(&self.settings, now)?
-            .items
-            .into_iter()
-            .nth(item)?;
-        self.perform(item.on_toggle, character, now)
-    }
-
-    fn take_checklist_toggle(&mut self) -> bool {
-        mem::take(&mut self.requests.toggles_checklist)
-    }
-
-    fn take_copied(&mut self) -> Option<String> {
-        self.requests.copied.take()
-    }
-
-    fn show_question(&mut self, shown: bool) {
-        self.question_shown = shown;
-    }
-
-    fn take_field_toggle(&mut self) -> bool {
-        mem::take(&mut self.requests.toggles_field)
+        outcome
     }
 
     fn dismiss(&mut self) {
-        self.on_answer = None;
-        self.on_shift_answer = None;
-        self.on_tick.clear();
+        self.answers = None;
     }
 
     fn refresh(&mut self, storage: &Storage) {

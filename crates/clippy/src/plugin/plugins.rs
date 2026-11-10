@@ -20,12 +20,12 @@ use std::mem;
 use jiff::civil::DateTime;
 
 use crate::app::{Command, Moment};
-use crate::balloon::{Checkbox, Prompt};
+use crate::balloon::{Content, Press, Prompt};
 use crate::calendar::Agenda;
 use crate::character::Character;
 use crate::menu::Entry;
-use crate::plugin::MenuItem;
-use crate::plugin::installed::{AnyPlugin, Asked, Listed, Noticed};
+use crate::plugin::installed::{AnyPlugin, Trigger};
+use crate::plugin::{Item, Listed, Noticed};
 use crate::shortcut::Shortcut;
 use crate::storage::Storage;
 
@@ -55,9 +55,8 @@ struct Asking {
 
 struct Showing {
     plugin: usize,
-    title: String,
-    items: Vec<(String, Checkbox)>,
-    press: Option<(usize, bool)>,
+    list: Listed,
+    press: Press,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -119,76 +118,50 @@ impl Plugins {
         &self,
         now: DateTime,
     ) -> impl Iterator<Item = (&'static str, Shortcut)> {
-        self.installed.iter().flat_map(move |installed| {
-            let name = installed.name();
-            installed
-                .menu(now)
-                .into_iter()
-                .filter_map(move |item| Some((name, item.shortcut?)))
-        })
+        self.items(now)
+            .filter_map(|(_, name, item)| Some((name, item.shortcut?)))
     }
 
     pub(crate) fn active_shortcuts(&self, now: DateTime) -> impl Iterator<Item = Shortcut> {
-        self.installed.iter().flat_map(move |installed| {
-            installed
-                .menu(now)
-                .into_iter()
-                .filter(|item| item.enabled)
-                .filter_map(|item| item.shortcut)
-        })
+        self.items(now)
+            .filter_map(|(.., item)| item.shortcut.filter(|_| item.enabled))
     }
 
     pub(crate) fn item_for(&self, shortcut: Shortcut, now: DateTime) -> Option<PluginItem> {
-        self.installed
-            .iter()
-            .enumerate()
-            .find_map(|(plugin, installed)| {
-                let item = installed
-                    .menu(now)
-                    .iter()
-                    .position(|item| item.enabled && item.shortcut == Some(shortcut))?;
-                Some(PluginItem {
-                    plugin,
-                    item,
-                    at: now,
-                })
-            })
+        self.items(now)
+            .find(|(.., item)| item.enabled && item.shortcut == Some(shortcut))
+            .map(|(chosen, ..)| chosen)
     }
 
-    pub(crate) fn menu(&self, now: DateTime) -> impl Iterator<Item = Entry> {
-        self.installed
-            .iter()
-            .enumerate()
-            .filter_map(move |(plugin, installed)| {
-                let entries: Vec<Entry> = installed
-                    .menu(now)
-                    .into_iter()
-                    .enumerate()
-                    .map(
-                        |(
-                            item,
-                            MenuItem {
-                                title,
-                                enabled,
-                                shortcut,
-                                ..
-                            },
-                        )| Entry::Item {
-                            title,
-                            command: Command::Plugin(PluginItem {
-                                plugin,
-                                item,
-                                at: now,
-                            }),
-                            enabled,
-                            shortcut,
-                        },
-                    )
-                    .collect();
-                (!entries.is_empty()).then(|| Entry::Submenu {
-                    title: installed.name().to_owned(),
-                    entries,
-                })
+    pub(crate) fn menu(&self, now: DateTime) -> Vec<Entry> {
+        let mut submenus = Vec::new();
+        for (chosen, name, item) in self.items(now) {
+            let entry = Entry::Item {
+                title: item.title,
+                command: Command::Plugin(chosen),
+                enabled: item.enabled,
+                shortcut: item.shortcut,
+            };
+            match submenus.last_mut() {
+                Some(Entry::Submenu { title, entries }) if title == name => entries.push(entry),
+                _ => submenus.push(Entry::Submenu {
+                    title: name.to_owned(),
+                    entries: vec![entry],
+                }),
+            }
+        }
+        submenus
+    }
+
+    fn items(&self, now: DateTime) -> impl Iterator<Item = (PluginItem, &'static str, Item)> {
+        let at = now;
+        (0..)
+            .zip(&self.installed)
+            .flat_map(move |(plugin, installed)| {
+                let name = installed.name();
+                (0..)
+                    .zip(installed.menu(now))
+                    .map(move |(item, view)| (PluginItem { plugin, item, at }, name, view))
             })
     }
 
@@ -196,7 +169,7 @@ impl Plugins {
         let messages: Vec<String> = self
             .installed
             .iter()
-            .filter_map(|installed| installed.message(now))
+            .filter_map(|installed| Some(installed.message(now)?.text))
             .collect();
         (!messages.is_empty()).then(|| messages.join("\n\n"))
     }
@@ -237,7 +210,7 @@ impl Plugins {
     pub(crate) fn message_shortcuts(&self, now: DateTime) -> impl Iterator<Item = Shortcut> {
         self.installed
             .iter()
-            .filter_map(move |installed| installed.message_shortcut(now))
+            .filter_map(move |installed| installed.message(now)?.shortcut)
     }
 
     pub(crate) fn press_message(
@@ -246,17 +219,14 @@ impl Plugins {
         character: &mut Character,
         moment: Moment,
     ) -> bool {
-        let Some(plugin) = self
-            .installed
-            .iter()
-            .position(|installed| installed.message_shortcut(moment.local) == Some(shortcut))
-        else {
-            return false;
-        };
-        self.act(plugin, moment, |installed| {
-            installed.double_click(character, moment.local)
+        let owner = self.installed.iter().position(|installed| {
+            let message = installed.message(moment.local);
+            message.is_some_and(|said| said.shortcut == Some(shortcut))
         });
-        true
+        if let Some(plugin) = owner {
+            self.act(plugin, Trigger::DoubleClick, character, moment);
+        }
+        owner.is_some()
     }
 
     pub(crate) fn shows_anything(&self, plugin: usize, due: &[Due], now: DateTime) -> bool {
@@ -277,69 +247,23 @@ impl Plugins {
         self.checklists
     }
 
-    pub(crate) fn checklist(&self) -> Option<(&str, &[(String, Checkbox)])> {
+    pub(crate) fn checklist(&self) -> Option<Content<'_>> {
         let showing = self.showing.as_ref()?;
-        Some((&showing.title, &showing.items))
+        Some(Content::Checklist {
+            title: &showing.list.title,
+            items: &showing.list.items,
+            press: showing.press,
+        })
     }
 
     pub(crate) fn refresh_checklist(&mut self, now: DateTime) {
         let Some(showing) = &mut self.showing else {
             return;
         };
-        let Some(Listed { title, items }) = self.installed[showing.plugin].checklist(now) else {
-            self.showing = None;
-            return;
-        };
-        if showing.press.is_some_and(|(item, _)| item >= items.len()) {
-            showing.press = None;
+        match self.installed[showing.plugin].checklist(now) {
+            Some(list) => showing.list = list,
+            None => self.showing = None,
         }
-        showing.title = title;
-        showing.items = (0..)
-            .zip(items)
-            .map(|(item, (label, checked))| {
-                let pressed = showing.press == Some((item, true));
-                (label, Checkbox { checked, pressed })
-            })
-            .collect();
-    }
-
-    pub(crate) fn press_checklist(&mut self, item: usize) {
-        if let Some(showing) = &mut self.showing
-            && item < showing.items.len()
-        {
-            showing.press = Some((item, true));
-        }
-    }
-
-    pub(crate) fn drag_checklist(&mut self, inside: bool) {
-        if let Some(Showing {
-            press: Some((_, pressing)),
-            ..
-        }) = &mut self.showing
-        {
-            *pressing = inside;
-        }
-    }
-
-    pub(crate) fn release_checklist(
-        &mut self,
-        inside: bool,
-        character: &mut Character,
-        moment: Moment,
-    ) {
-        let Some(showing) = &mut self.showing else {
-            return;
-        };
-        let Some((item, _)) = showing.press.take() else {
-            return;
-        };
-        let plugin = showing.plugin;
-        if inside {
-            self.act(plugin, moment, |installed| {
-                installed.toggle(item, character, moment.local)
-            });
-        }
-        self.refresh_checklist(moment.local);
     }
 
     pub(crate) fn close_checklist(&mut self) {
@@ -355,57 +279,60 @@ impl Plugins {
     }
 
     pub(crate) fn choose(&mut self, item: PluginItem, character: &mut Character, moment: Moment) {
-        self.act(item.plugin, moment, |installed| {
-            installed.choose(item.item, item.at, character, moment.local)
-        });
+        let chosen = Trigger::Choose {
+            item: item.item,
+            listed: item.at,
+        };
+        self.act(item.plugin, chosen, character, moment);
     }
 
     pub(crate) fn double_click(&mut self, character: &mut Character, moment: Moment) {
-        if self.asking.is_some() {
-            return;
-        }
-        let owner = self
-            .installed
-            .iter()
-            .position(|installed| installed.answers_double_click(moment.local));
-        if let Some(plugin) = owner {
-            self.act(plugin, moment, |installed| {
-                installed.double_click(character, moment.local)
-            });
+        let owner = self.installed.iter().position(|installed| {
+            let message = installed.message(moment.local);
+            message.is_some_and(|said| said.answers_double_click)
+        });
+        if let Some(plugin) = owner.filter(|_| self.asking.is_none()) {
+            self.act(plugin, Trigger::DoubleClick, character, moment);
         }
     }
 
     pub(crate) fn submit(&mut self, shift: bool, character: &mut Character, moment: Moment) {
-        if !self.prompt().is_some_and(Prompt::shows_field) {
-            return;
+        if let Some(Asking { plugin, prompt }) =
+            self.asking.take_if(|asking| asking.prompt.shows_field())
+        {
+            let text = prompt.into_answer();
+            self.act(plugin, Trigger::Answer { text, shift }, character, moment);
         }
-        let Some(Asking { plugin, prompt }) = self.asking.take() else {
-            return;
-        };
-        let answer = prompt.into_answer();
-        self.act(plugin, moment, |installed| {
-            installed.answer(answer, shift, character, moment.local)
-        });
     }
 
-    pub(crate) fn press_asked_task(&mut self, task: usize) {
+    pub(crate) fn press(&mut self, row: usize) {
         if let Some(asking) = &mut self.asking {
-            asking.prompt.press_task(task);
+            asking.prompt.press_task(row);
+        } else if let Some(showing) = &mut self.showing {
+            showing.press.begin(row, showing.list.items.len());
         }
     }
 
-    pub(crate) fn drag_asked_task(&mut self, inside: bool) {
+    pub(crate) fn drag(&mut self, inside: bool) {
         if let Some(asking) = &mut self.asking {
             asking.prompt.drag_task(inside);
         }
+        if let Some(showing) = &mut self.showing {
+            showing.press.drag(inside);
+        }
     }
 
-    pub(crate) fn release_asked_task(
-        &mut self,
-        inside: bool,
-        character: &mut Character,
-        moment: Moment,
-    ) {
+    pub(crate) fn release(&mut self, inside: bool, character: &mut Character, moment: Moment) {
+        self.release_asked_task(inside, character, moment);
+        if let Some(showing) = &mut self.showing
+            && let Some(item) = showing.press.release(inside)
+        {
+            let plugin = showing.plugin;
+            self.act(plugin, Trigger::Toggle(item), character, moment);
+        }
+    }
+
+    fn release_asked_task(&mut self, inside: bool, character: &mut Character, moment: Moment) {
         let Some(asking) = &mut self.asking else {
             return;
         };
@@ -415,9 +342,7 @@ impl Plugins {
         let plugin = asking.plugin;
         let wanted_focus = asking.prompt.wants_focus();
         let field_shown = asking.prompt.shows_field();
-        self.act(plugin, moment, |installed| {
-            installed.tick_asked_task(task, character, moment.local)
-        });
+        self.act(plugin, Trigger::TickAsked(task), character, moment);
         if let Some(asking) = &mut self.asking {
             asking.prompt.show_field(field_shown);
             if !wanted_focus {
@@ -431,30 +356,18 @@ impl Plugins {
         self.prompt_shown = shown;
     }
 
-    pub(crate) fn close_empty_list(&mut self) {
-        if self
-            .asking
-            .as_ref()
-            .is_some_and(|asking| !asking.prompt.shows_field() && !asking.prompt.has_tasks())
-        {
-            self.dismiss();
-        }
-    }
-
     pub(crate) fn take_copies(&mut self) -> Vec<String> {
         mem::take(&mut self.copies)
     }
 
     pub(crate) fn snooze(&mut self, due: &Due, character: &mut Character, moment: Moment) {
-        self.act(due.plugin, moment, |installed| {
-            installed.snooze(&due.notice.id, character, moment.local)
-        });
+        let snoozed = Trigger::Snooze(&due.notice.id);
+        self.act(due.plugin, snoozed, character, moment);
     }
 
     pub(crate) fn check(&mut self, due: &Due, character: &mut Character, moment: Moment) {
-        self.act(due.plugin, moment, |installed| {
-            installed.check(&due.notice.id, character, moment.local)
-        });
+        let checked = Trigger::Check(&due.notice.id);
+        self.act(due.plugin, checked, character, moment);
     }
 
     pub(crate) fn toggle_task(
@@ -464,9 +377,8 @@ impl Plugins {
         character: &mut Character,
         moment: Moment,
     ) {
-        self.act(due.plugin, moment, |installed| {
-            installed.toggle_task(&due.notice.id, task, character, moment.local)
-        });
+        let toggled = Trigger::ToggleTask(&due.notice.id, task);
+        self.act(due.plugin, toggled, character, moment);
     }
 
     pub(crate) fn dismiss(&mut self) {
@@ -499,24 +411,23 @@ impl Plugins {
     fn act(
         &mut self,
         plugin: usize,
+        trigger: Trigger<'_>,
+        character: &mut Character,
         moment: Moment,
-        perform: impl FnOnce(&mut dyn AnyPlugin) -> Option<Asked>,
     ) {
+        let question_shown = self.asker() == Some(plugin) && self.prompt_shown;
         let Some(installed) = self.installed.get_mut(plugin) else {
             return;
         };
         if let Some(storage) = &self.storage {
             installed.refresh(storage);
         }
-        let asking = self.asking.as_ref().map(|asking| asking.plugin);
-        installed.show_question(asking == Some(plugin) && self.prompt_shown);
-        let asked = perform(installed.as_mut());
-        self.copies.extend(installed.take_copied());
-        let toggles_field = installed.take_field_toggle();
-        if installed.take_checklist_toggle() {
+        let outcome = installed.act(trigger, question_shown, character, moment.local);
+        self.copies.extend(outcome.copied);
+        if outcome.toggles_checklist {
             self.toggle_checklist(plugin, moment.local);
         }
-        if toggles_field
+        if outcome.toggles_field
             && let Some(asking) = &mut self.asking
             && asking.plugin == plugin
         {
@@ -527,39 +438,35 @@ impl Plugins {
             }
             self.close_empty_list();
         }
-        let Some(Asked {
-            question,
-            draft,
-            tasks,
-            standing,
-            shortcut,
-        }) = asked
-        else {
+        let Some(asked) = outcome.asked else {
             return;
         };
-        if let Some(asking) = &mut self.asking
-            && asking.plugin == plugin
-            && asking.prompt.question() == question
-        {
-            asking.prompt.set_tasks(tasks);
-            asking.prompt.set_standing(standing);
-            asking.prompt.set_shortcut(shortcut);
-            asking.prompt.show_field(true);
-            asking.prompt.request_focus();
-            self.questions += 1;
-            return;
-        }
-        if let Some(previous) = self.asking.take()
-            && previous.plugin != plugin
-        {
-            self.installed[previous.plugin].dismiss();
-        }
-        let mut prompt = Prompt::new(question, draft, moment.instant);
-        prompt.set_tasks(tasks);
-        prompt.set_standing(standing);
-        prompt.set_shortcut(shortcut);
-        self.asking = Some(Asking { plugin, prompt });
         self.questions += 1;
+        match &mut self.asking {
+            Some(asking)
+                if asking.plugin == plugin && asking.prompt.question() == asked.question =>
+            {
+                asking.prompt.ask_again(asked);
+            }
+            asking => {
+                let prompt = Prompt::new(asked, moment.instant);
+                if let Some(previous) = asking.replace(Asking { plugin, prompt })
+                    && previous.plugin != plugin
+                {
+                    self.installed[previous.plugin].dismiss();
+                }
+            }
+        }
+    }
+
+    fn close_empty_list(&mut self) {
+        if self
+            .asking
+            .as_ref()
+            .is_some_and(|asking| !asking.prompt.shows_field() && !asking.prompt.has_tasks())
+        {
+            self.dismiss();
+        }
     }
 
     fn toggle_checklist(&mut self, plugin: usize, now: DateTime) {
@@ -567,15 +474,13 @@ impl Plugins {
             self.showing = None;
             return;
         }
-        self.showing = Some(Showing {
+        let press = Press::default();
+        let list = self.installed[plugin].checklist(now);
+        self.showing = list.map(|list| Showing {
             plugin,
-            title: String::new(),
-            items: Vec::new(),
-            press: None,
+            list,
+            press,
         });
-        self.refresh_checklist(now);
-        if self.showing.is_some() {
-            self.checklists += 1;
-        }
+        self.checklists += usize::from(self.showing.is_some());
     }
 }

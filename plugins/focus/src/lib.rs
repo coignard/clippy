@@ -22,8 +22,6 @@ use clippy::{Context, MenuItem, Message, Plugin, Question};
 use jiff::civil::DateTime;
 use serde::{Deserialize, Serialize};
 
-const COMMAND_SHIFT: Modifiers = Modifiers::COMMAND.union(Modifiers::SHIFT);
-
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Focus {
@@ -48,14 +46,8 @@ pub enum Action {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            edit_shortcut: Shortcut {
-                modifiers: COMMAND_SHIFT,
-                key: Key::Enter,
-            },
-            clear_shortcut: Shortcut {
-                modifiers: COMMAND_SHIFT,
-                key: Key::Delete,
-            },
+            edit_shortcut: Shortcut::new(Modifiers::COMMAND_SHIFT, Key::Enter),
+            clear_shortcut: Shortcut::new(Modifiers::COMMAND_SHIFT, Key::Delete),
         }
     }
 }
