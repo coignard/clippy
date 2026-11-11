@@ -15,24 +15,31 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::mem;
 use std::time::{Duration, Instant};
 
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::assets::FONT;
-use crate::balloon::Checkbox;
+use crate::balloon::controls::Press;
 use crate::balloon::layout::{FIELD_INSET, FIELD_TEXT_WIDTH};
 use crate::balloon::text_field::{Edit, TextField};
 use crate::shortcut::Shortcut;
 
 const CARET_BLINK: Duration = Duration::from_millis(530);
 
+#[derive(Default)]
+pub(crate) struct Asked {
+    pub(crate) question: String,
+    pub(crate) draft: String,
+    pub(crate) tasks: Vec<String>,
+    pub(crate) standing: bool,
+    pub(crate) shortcut: Option<Shortcut>,
+}
+
 pub(crate) struct Prompt {
-    question: String,
-    tasks: Vec<String>,
-    press: Option<(usize, bool)>,
-    standing: bool,
-    shortcut: Option<Shortcut>,
+    asked: Asked,
+    press: Press,
     field_shown: bool,
     field: TextField,
     scroll: i32,
@@ -46,15 +53,12 @@ struct Caret {
 }
 
 impl Prompt {
-    pub(crate) fn new(question: String, draft: String, now: Instant) -> Self {
+    pub(crate) fn new(mut asked: Asked, now: Instant) -> Self {
         let mut prompt = Self {
-            question,
-            tasks: Vec::new(),
-            press: None,
-            standing: false,
-            shortcut: None,
+            field: TextField::new(mem::take(&mut asked.draft)),
+            asked,
+            press: Press::default(),
             field_shown: true,
-            field: TextField::new(draft),
             scroll: 0,
             caret: Caret::shown(now),
             wants_focus: true,
@@ -64,35 +68,31 @@ impl Prompt {
         prompt
     }
 
-    pub(crate) fn question(&self) -> &str {
-        &self.question
+    pub(crate) fn ask_again(&mut self, asked: Asked) {
+        self.asked = asked;
+        self.press = Press::default();
+        self.field_shown = true;
+        self.wants_focus = true;
     }
 
-    pub(crate) fn tasks(&self) -> impl Iterator<Item = (&str, Checkbox)> {
-        (0..).zip(&self.tasks).map(|(task, label)| {
-            let pressed = self.press == Some((task, true));
-            let state = Checkbox {
-                checked: false,
-                pressed,
-            };
-            (label.as_str(), state)
-        })
+    pub(crate) fn question(&self) -> &str {
+        &self.asked.question
+    }
+
+    pub(crate) fn tasks(&self) -> impl Iterator<Item = &str> {
+        self.asked.tasks.iter().map(String::as_str)
+    }
+
+    pub(crate) fn task_press(&self) -> Press {
+        self.press
     }
 
     pub(crate) fn is_standing(&self) -> bool {
-        self.standing
-    }
-
-    pub(crate) fn set_standing(&mut self, standing: bool) {
-        self.standing = standing;
+        self.asked.standing
     }
 
     pub(crate) fn shortcut(&self) -> Option<Shortcut> {
-        self.shortcut
-    }
-
-    pub(crate) fn set_shortcut(&mut self, shortcut: Option<Shortcut>) {
-        self.shortcut = shortcut;
+        self.asked.shortcut
     }
 
     pub(crate) fn shows_field(&self) -> bool {
@@ -104,29 +104,20 @@ impl Prompt {
     }
 
     pub(crate) fn has_tasks(&self) -> bool {
-        !self.tasks.is_empty()
-    }
-
-    pub(crate) fn set_tasks(&mut self, tasks: Vec<String>) {
-        self.tasks = tasks;
-        self.press = None;
+        !self.asked.tasks.is_empty()
     }
 
     pub(crate) fn press_task(&mut self, task: usize) {
-        if task < self.tasks.len() {
-            self.press = Some((task, true));
-        }
+        self.press.begin(task, self.asked.tasks.len());
     }
 
     pub(crate) fn drag_task(&mut self, inside: bool) {
-        if let Some((_, pressing)) = &mut self.press {
-            *pressing = inside;
-        }
+        self.press.drag(inside);
     }
 
     pub(crate) fn release_task(&mut self, inside: bool) -> Option<usize> {
-        let (task, _) = self.press.take().filter(|_| inside)?;
-        self.tasks.remove(task);
+        let task = self.press.release(inside)?;
+        self.asked.tasks.remove(task);
         Some(task)
     }
 
@@ -244,11 +235,12 @@ mod tests {
     const LONG: &str = "Ship the plan, write the tests, then fix every last bug";
 
     fn prompt(draft: &str) -> Prompt {
-        Prompt::new(
-            "What are you focusing on?".to_owned(),
-            draft.to_owned(),
-            Instant::now(),
-        )
+        let asked = Asked {
+            question: "What are you focusing on?".to_owned(),
+            draft: draft.to_owned(),
+            ..Asked::default()
+        };
+        Prompt::new(asked, Instant::now())
     }
 
     fn selected(prompt: &Prompt) -> &str {
@@ -331,8 +323,8 @@ mod tests {
 
     #[test]
     fn caret_blinks_and_reappears_on_every_edit() {
-        let opened = Instant::now();
-        let mut prompt = Prompt::new(String::new(), "Ship".to_owned(), opened);
+        let mut prompt = prompt("Ship");
+        let opened = prompt.deadline().checked_sub(CARET_BLINK).unwrap();
         prompt.advance(opened + CARET_BLINK / 2);
         assert!(prompt.is_caret_shown());
         prompt.advance(opened + CARET_BLINK);

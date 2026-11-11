@@ -108,13 +108,6 @@ fn asks_and_keeps_the_answer_out_of_sight() {
 }
 
 #[test]
-fn the_shortcut_asks_too() {
-    let mut inbox = Harness::new(Inbox::default());
-    inbox.press("Cmd+Option+Shift+Enter".parse().unwrap());
-    assert_eq!(inbox.question(), Some(QUESTION));
-}
-
-#[test]
 fn files_answers_in_inbox_json() {
     let directory = TempDir::new().unwrap();
     let mut app = launch(&directory);

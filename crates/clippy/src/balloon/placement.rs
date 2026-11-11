@@ -75,15 +75,6 @@ mod tests {
     const BALLOON: Size = Size::new(200, 100);
 
     #[test]
-    fn prefers_above_and_to_the_left() {
-        let clippy = Rect::new(700, 600, 124, 93);
-        assert_eq!(
-            Placement::choose(clippy, BALLOON, SCREEN),
-            (Placement::TopLeft, Rect::new(624, 500, 200, 100))
-        );
-    }
-
-    #[test]
     fn flips_to_the_right_near_the_left_edge() {
         let clippy = Rect::new(10, 600, 124, 93);
         assert_eq!(

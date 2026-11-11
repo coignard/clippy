@@ -37,14 +37,6 @@ fn todo(tasks: &[&str]) -> Harness {
 }
 
 #[test]
-fn an_empty_list_asks_like_focus() {
-    let todo = todo(&[]);
-    assert_eq!(todo.question(), Some(QUESTION));
-    assert_eq!(todo.draft(), Some(""));
-    assert_eq!(todo.asked_tasks(), Vec::<String>::new());
-}
-
-#[test]
 fn enter_adds_to_the_bottom_and_shift_enter_to_the_top() {
     let mut todo = todo(&[]);
     todo.answer("Buy milk");

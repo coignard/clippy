@@ -33,6 +33,32 @@ pub(crate) struct Checkbox {
     pub(crate) pressed: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Press(Option<(usize, bool)>);
+
+impl Press {
+    pub(crate) fn begin(&mut self, row: usize, rows: usize) {
+        if row < rows {
+            self.0 = Some((row, true));
+        }
+    }
+
+    pub(crate) fn drag(&mut self, inside: bool) {
+        if let Some((_, pressed)) = &mut self.0 {
+            *pressed = inside;
+        }
+    }
+
+    pub(crate) fn release(&mut self, inside: bool) -> Option<usize> {
+        let (row, _) = self.0.take().filter(|_| inside)?;
+        Some(row)
+    }
+
+    pub(crate) fn holds(self, row: usize) -> bool {
+        self.0 == Some((row, true))
+    }
+}
+
 pub(super) fn sunken(canvas: &mut Canvas, area: Rect, interior: Color) {
     canvas.fill(area, interior);
     for (width, top_left, bottom_right) in [(2, DARK, FACE), (1, SHADOW, WHITE)] {

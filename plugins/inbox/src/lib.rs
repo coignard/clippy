@@ -26,10 +26,6 @@ use jiff::civil::DateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-const COMMAND_OPTION_SHIFT: Modifiers = Modifiers::COMMAND
-    .union(Modifiers::OPTION)
-    .union(Modifiers::SHIFT);
-
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Inbox {
@@ -66,10 +62,7 @@ pub enum Action {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            add_shortcut: Shortcut {
-                modifiers: COMMAND_OPTION_SHIFT,
-                key: Key::Enter,
-            },
+            add_shortcut: Shortcut::new(Modifiers::COMMAND_OPTION_SHIFT, Key::Enter),
         }
     }
 }
@@ -91,7 +84,7 @@ impl Plugin for Inbox {
     fn perform(&mut self, action: Action, cx: &mut Context<'_, Self>) {
         match action {
             Action::Ask => cx.ask(Question::new("What's on your mind?", Action::Add)),
-            Action::Add(text) if text.trim().is_empty() => {}
+            Action::Add(text) if text.is_empty() => {}
             Action::Add(text) => {
                 let now = cx.now();
                 self.items.push(Item {

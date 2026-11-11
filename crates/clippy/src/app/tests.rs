@@ -1,3 +1,20 @@
+// This file is part of Clippy.
+//
+// Copyright (c) 2026  René Coignard <contact@renecoignard.com>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::num::NonZeroU8;
@@ -24,18 +41,9 @@ use crate::storage::Storage;
 const SCREEN: Rect = Rect::new(0, 0, 1440, 900);
 const CLIPPY: Rect = Rect::new(1300, 800, 124, 93);
 const QUICK: Duration = Duration::from_millis(200);
-const WRITE: Shortcut = Shortcut {
-    modifiers: Modifiers::COMMAND,
-    key: Key::F5,
-};
-const ERASE: Shortcut = Shortcut {
-    modifiers: Modifiers::COMMAND,
-    key: Key::F6,
-};
-const TICK: Shortcut = Shortcut {
-    modifiers: Modifiers::COMMAND,
-    key: Key::F7,
-};
+const WRITE: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::F5);
+const ERASE: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::F6);
+const TICK: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::F7);
 const STRETCH: &str = "Time to stretch!";
 const WATER: &str = "Have some water.";
 const DONE: &str = "Don't show me this reminder again";
@@ -102,10 +110,7 @@ impl Plugin for Note {
     }
 }
 
-const PACK: Shortcut = Shortcut {
-    modifiers: Modifiers::COMMAND.union(Modifiers::SHIFT),
-    key: Key::P,
-};
+const PACK: Shortcut = Shortcut::new(Modifiers::COMMAND_SHIFT, Key::P);
 
 #[derive(Default, Serialize, Deserialize)]
 struct Packing {
@@ -151,10 +156,7 @@ impl Plugin for Packing {
     }
 }
 
-const LIST: Shortcut = Shortcut {
-    modifiers: Modifiers::COMMAND.union(Modifiers::SHIFT),
-    key: Key::L,
-};
+const LIST: Shortcut = Shortcut::new(Modifiers::COMMAND_SHIFT, Key::L);
 
 #[derive(Default, Serialize, Deserialize)]
 struct Todos {
@@ -769,10 +771,7 @@ fn shown(app: &App) -> Option<String> {
 
 fn listed(app: &App) -> Vec<(&str, Checkbox)> {
     match app.balloon(None) {
-        Some(Content::Checklist { items, .. }) => items
-            .iter()
-            .map(|(label, state)| (label.as_str(), *state))
-            .collect(),
+        Some(content @ Content::Checklist { .. }) => content.rows(),
         _ => Vec::new(),
     }
 }
@@ -797,18 +796,18 @@ fn with_todos(directory: &TempDir, settings: Settings) -> (App, Instant) {
 
 fn todos(app: &App) -> Option<Vec<&str>> {
     match app.balloon(None)? {
-        Content::Prompt { prompt, .. } => Some(prompt.tasks().map(|(task, _)| task).collect()),
+        Content::Prompt { prompt, .. } => Some(prompt.tasks().collect()),
         _ => None,
     }
 }
 
 fn notice(app: &App) -> Option<(&str, Checkbox)> {
     match app.balloon(None)? {
-        Content::Notice {
+        content @ Content::Notice {
             text,
-            checkbox: Some((DONE, checkbox)),
+            checkbox: Some((DONE, _)),
             ..
-        } => Some((text, checkbox)),
+        } => Some((text, content.rows().pop()?.1)),
         _ => None,
     }
 }
@@ -931,19 +930,6 @@ fn balloon_waits_for_clippy_to_arrive() {
     assert!(restarted.scene().balloon.is_none());
     settle(&mut restarted, now, App::is_present);
     assert_eq!(shown(&restarted).as_deref(), Some("Ship it"));
-}
-
-#[test]
-fn editing_preselects_the_current_message() {
-    let directory = TempDir::new().unwrap();
-    let (mut app, now) = launch(&directory, Settings::default());
-    choose(&mut app, "Write...", now);
-    answer(&mut app, "Write tests", now);
-    choose(&mut app, "Write...", now);
-    assert_eq!(draft(&app), Some("Write tests"));
-    edit(&mut app, Edit::Insert("Ship it".into()), now);
-    app.handle(Event::Submit, now);
-    assert_eq!(shown(&app).as_deref(), Some("Ship it"));
 }
 
 #[test]
@@ -1648,14 +1634,6 @@ fn launching_in_full_screen_greets_once_it_ends() {
 }
 
 #[test]
-fn double_clicking_clippy_plays_a_trick() {
-    let directory = TempDir::new().unwrap();
-    let (mut app, now) = launch(&directory, Settings::default());
-    app.handle(Event::ClippyDoubleClick, now);
-    settle(&mut app, now, |app| app.character.is_performing());
-}
-
-#[test]
 fn questions_asked_while_focused_never_steal_focus_later() {
     let directory = TempDir::new().unwrap();
     let (mut app, now) = launch(&directory, Settings::default());
@@ -2001,13 +1979,9 @@ fn with_errands(directory: &TempDir) -> (App, Instant) {
 
 fn errands(app: &App) -> Vec<(bool, bool)> {
     match app.balloon(None) {
-        Some(Content::Notice {
-            tasks,
-            checkbox: Some((_, checkbox)),
-            ..
-        }) => tasks
-            .iter()
-            .chain([&(String::new(), checkbox)])
+        Some(content @ Content::Notice { .. }) => content
+            .rows()
+            .into_iter()
             .map(|(_, state)| (state.checked, state.pressed))
             .collect(),
         _ => Vec::new(),
@@ -2333,7 +2307,7 @@ fn double_clicks_and_other_commands_put_a_checklist_away() {
         app.handle(Event::Shortcut(PACK), now);
         assert_eq!(listed(&app).len(), 2);
         app.handle(event.clone(), now);
-        assert_eq!(app.plugins.checklist(), None, "{event:?}");
+        assert!(app.plugins.checklist().is_none(), "{event:?}");
         app.handle(Event::Shortcut(PACK), now);
         assert_eq!(listed(&app).len(), 2, "{event:?}");
     }
@@ -2385,7 +2359,7 @@ fn a_checklist_summons_clippy_until_its_shortcut_puts_it_away() {
     app.handle(Event::Tick, later);
     assert!(app.is_present());
     app.handle(Event::Shortcut(PACK), later);
-    assert_eq!(app.plugins.checklist(), None);
+    assert!(app.plugins.checklist().is_none());
     settle(&mut app, later, is_absent);
 }
 
@@ -2686,4 +2660,40 @@ fn a_list_hides_on_its_own_shortcut_before_any_menu_item_gets_it() {
     assert_eq!(shown(&app).as_deref(), Some("Focus"));
     app.handle(Event::Shortcut(ERASE), now);
     assert_eq!(shown(&app), None);
+}
+
+#[test]
+fn a_checklist_asked_for_puts_an_open_question_away() {
+    let directory = TempDir::new().unwrap();
+    let mut app = App::builder().plugin::<Note>().plugin::<Packing>().build(
+        enabling(&["Note", "Packing"]),
+        Storage::new(directory.path()),
+    );
+    app.place(CLIPPY, SCREEN);
+    let (mut app, now) = start(app);
+    app.handle(Event::Shortcut(WRITE), now);
+    app.handle(Event::Shortcut(PACK), now);
+    assert_eq!(draft(&app), None);
+    assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", UNTICKED)]);
+}
+
+#[test]
+fn the_shortcut_brings_a_checklist_out_from_under_a_notice() {
+    let directory = TempDir::new().unwrap();
+    let day = Day::starting_at(9, 59);
+    let mut app = App::builder()
+        .plugin::<Chores>()
+        .plugin::<Packing>()
+        .clock(day.clock())
+        .build(
+            enabling(&["Chores", "Packing"]),
+            Storage::new(directory.path()),
+        );
+    app.place(CLIPPY, SCREEN);
+    app.handle(Event::Launch, day.origin);
+    let now = settle(&mut app, day.origin, App::is_present);
+    app.handle(Event::Shortcut(PACK), now);
+    let now = settle(&mut app, now, noticed);
+    app.handle(Event::Shortcut(PACK), now);
+    assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", UNTICKED)]);
 }

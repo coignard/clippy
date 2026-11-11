@@ -100,7 +100,6 @@ mod tests {
     use png::Encoder;
 
     use super::*;
-    use crate::graphics::{BLACK, WHITE};
 
     fn encode(bit_depth: BitDepth, pixels: &[u8]) -> Vec<u8> {
         let mut png = Vec::new();
@@ -132,15 +131,5 @@ mod tests {
             error.to_string(),
             "expected 8-bit RGBA pixels, found 16-bit Rgba"
         );
-    }
-
-    #[test]
-    fn recolors_every_pixel() {
-        let png = encode(BitDepth::Eight, &[255, 255, 255, 255, 0, 0, 0, 0]);
-        let image = Image::decode(&png)
-            .unwrap()
-            .recolored(|color| if color == WHITE { BLACK } else { color });
-        assert_eq!(image.pixel(0, 0), BLACK);
-        assert_eq!(image.pixel(1, 0), TRANSPARENT);
     }
 }

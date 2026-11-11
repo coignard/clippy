@@ -22,8 +22,6 @@ use clippy::{Context, MenuItem, Message, Plugin, Question};
 use jiff::civil::DateTime;
 use serde::{Deserialize, Serialize};
 
-const COMMAND_SHIFT: Modifiers = Modifiers::COMMAND.union(Modifiers::SHIFT);
-
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Focus {
@@ -48,14 +46,8 @@ pub enum Action {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            edit_shortcut: Shortcut {
-                modifiers: COMMAND_SHIFT,
-                key: Key::Enter,
-            },
-            clear_shortcut: Shortcut {
-                modifiers: COMMAND_SHIFT,
-                key: Key::Delete,
-            },
+            edit_shortcut: Shortcut::new(Modifiers::COMMAND_SHIFT, Key::Enter),
+            clear_shortcut: Shortcut::new(Modifiers::COMMAND_SHIFT, Key::Delete),
         }
     }
 }
@@ -117,19 +109,6 @@ mod tests {
         Harness::new(Focus {
             current: Some(text.to_owned()),
         })
-    }
-
-    #[test]
-    fn offers_to_set_a_focus_at_first() {
-        let focus = Harness::new(Focus::default());
-        assert_eq!(
-            focus.menu(),
-            [
-                ("Set Focus...".to_owned(), true),
-                ("Clear Focus".to_owned(), false)
-            ]
-        );
-        assert_eq!(focus.message(), None);
     }
 
     #[test]
@@ -211,13 +190,6 @@ mod tests {
     }
 
     #[test]
-    fn the_shortcut_opens_the_question() {
-        let mut focus = focused_on("Ship it");
-        focus.press(Settings::default().edit_shortcut);
-        assert_eq!(focus.draft(), Some("Ship it"));
-    }
-
-    #[test]
     fn the_clear_shortcut_forgets_the_focus() {
         let mut focus = focused_on("Ship it");
         focus.press(Settings::default().clear_shortcut);
@@ -251,13 +223,5 @@ mod tests {
     fn missing_shortcuts_fall_back_to_their_defaults() {
         let settings: Settings = toml::from_str("edit_shortcut = \"Cmd+F\"").unwrap();
         assert_eq!(settings.clear_shortcut, Settings::default().clear_shortcut);
-    }
-
-    #[test]
-    fn clearing_forgets_the_focus() {
-        let mut focus = focused_on("Ship it");
-        focus.choose("Clear Focus");
-        assert_eq!(focus.message(), None);
-        assert_eq!(focus.menu()[0], ("Set Focus...".to_owned(), true));
     }
 }

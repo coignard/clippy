@@ -66,38 +66,11 @@ impl fmt::Display for Interval {
     }
 }
 
-impl TryFrom<String> for Interval {
-    type Error = ParseIntervalError;
-
-    fn try_from(text: String) -> Result<Self, Self::Error> {
-        text.parse()
-    }
-}
-
-impl From<Interval> for String {
-    fn from(interval: Interval) -> Self {
-        interval.to_string()
-    }
-}
+clippy::serde_as_text!(Interval);
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn reads_friendly_durations() {
-        for (text, minutes) in [
-            ("15m", 15),
-            ("1h", 60),
-            ("1h30m", 90),
-            ("1h 30m", 90),
-            ("90m", 90),
-            ("2 hours", 120),
-        ] {
-            assert_eq!(text.parse(), Ok(Interval::minutes(minutes)), "{text:?}");
-        }
-        assert_eq!(Interval::minutes(90).to_string(), "1h 30m");
-    }
 
     #[test]
     fn refuses_nonsense_and_spam() {

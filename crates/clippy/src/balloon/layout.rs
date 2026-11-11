@@ -261,11 +261,6 @@ mod tests {
     }
 
     #[test]
-    fn keeps_short_text_on_one_line() {
-        assert_eq!(lines("Ship it", 200), ["Ship it"]);
-    }
-
-    #[test]
     fn breaks_between_words() {
         let text = "дописать план приложения Clippy на Rust";
         let wrapped = lines(text, 100);

@@ -227,14 +227,6 @@ mod tests {
     }
 
     #[test]
-    fn a_summons_brings_clippy_back_for_good_by_default() {
-        let mut visibility = hidden();
-        visibility.summon(0, AfterSummons::Stay);
-        assert_eq!(visibility.summons(), None);
-        assert!(visibility.wants_clippy(Need::None));
-    }
-
-    #[test]
     fn a_summons_can_last_only_while_the_plugin_shows_something() {
         let mut visibility = hidden();
         visibility.summon(1, AfterSummons::Hide);

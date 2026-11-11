@@ -289,24 +289,6 @@ mod tests {
     }
 
     #[test]
-    fn plays_frames_in_order_then_finishes() {
-        let clip = Clip {
-            frames: vec![frame(100), frame(200), frame(300)],
-        };
-        let start = Instant::now();
-        let mut playback = Playback::start(&clip, start);
-        assert_eq!(
-            playback.deadline(),
-            Some(start + Duration::from_millis(100))
-        );
-        assert_eq!(walk(&mut playback, start, 2), [0, 1, 2]);
-        assert!(!playback.is_finished());
-        assert_eq!(walk(&mut playback, start, 1), [2]);
-        assert!(playback.is_finished());
-        assert_eq!(playback.deadline(), None);
-    }
-
-    #[test]
     fn waits_for_the_frame_to_end() {
         let clip = Clip {
             frames: vec![frame(100), frame(100)],

@@ -26,10 +26,10 @@ mod settings;
 
 use std::collections::BTreeMap;
 
-use clippy::hours::TimeOfDay;
+use clippy::hours::{TimeOfDay, midnight_after};
 use clippy::{Context, MenuItem, Notice, Plugin};
-use jiff::civil::{Date, DateTime, Time};
-use jiff::{SignedDuration, ToSpan};
+use jiff::ToSpan;
+use jiff::civil::{Date, DateTime};
 use serde::{Deserialize, Serialize};
 
 pub use settings::Settings;
@@ -38,8 +38,6 @@ use agenda::Agenda;
 use progress::Progress;
 use schedule::Comeback;
 use settings::Reminder;
-
-const PAUSE: SignedDuration = SignedDuration::from_hours(1);
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -194,33 +192,8 @@ impl Plugin for Reminders {
         if settings.reminders.is_empty() {
             return Vec::new();
         }
-        match self.paused_until.filter(|&until| now < until) {
-            Some(until) => {
-                let when = if until == midnight_after(now) {
-                    "Tomorrow".to_owned()
-                } else {
-                    TimeOfDay::from(until.time()).to_string()
-                };
-                vec![
-                    MenuItem::label(format!("Paused Until {when}")),
-                    MenuItem::new("Resume Reminders", Action::Resume),
-                ]
-            }
-            None => vec![
-                MenuItem::new(
-                    "Pause for an Hour",
-                    Action::Pause {
-                        until: now.saturating_add(PAUSE),
-                    },
-                ),
-                MenuItem::new(
-                    "Pause Until Tomorrow",
-                    Action::Pause {
-                        until: midnight_after(now),
-                    },
-                ),
-            ],
-        }
+        let pause = |until| Action::Pause { until };
+        MenuItem::pausing(self.paused_until, now, pause, Action::Resume)
     }
 
     fn notices(&self, settings: &Settings, now: DateTime) -> Vec<Notice<Action>> {
@@ -375,10 +348,6 @@ fn until(today: Date, comeback: Comeback) -> String {
         Some(time) => format!("{day} at {time}"),
         None => day,
     }
-}
-
-fn midnight_after(now: DateTime) -> DateTime {
-    TimeOfDay::from(Time::midnight()).next_after(now)
 }
 
 #[cfg(test)]

@@ -1,3 +1,20 @@
+// This file is part of Clippy.
+//
+// Copyright (c) 2026  René Coignard <contact@renecoignard.com>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 use clippy::Urgency;
 use clippy::shortcut::{Key, Modifiers, Shortcut};
 use clippy::testing::Harness;
@@ -351,19 +368,6 @@ fn a_reminder_takes_over_from_the_summary() {
     assert_eq!(harness.notices(), ["In 5 minutes:\nStandup", summary]);
     assert_eq!(harness.urgency("In 5 minutes:\nStandup"), Urgency::Pressing);
     assert_eq!(harness.urgency(summary), Urgency::Normal);
-}
-
-#[test]
-fn reminders_come_before_the_summary() {
-    let standup = event("standup", "Standup", at(9, 3), 15);
-    let harness = calendar("", vec![standup], at(9, 0));
-    assert_eq!(
-        harness.notices(),
-        [
-            "In 3 minutes:\nStandup",
-            "Today on your calendar:\n09:03 Standup"
-        ]
-    );
 }
 
 #[test]

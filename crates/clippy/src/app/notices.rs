@@ -17,7 +17,7 @@
 
 use std::mem;
 
-use crate::balloon::{Checkbox, Content};
+use crate::balloon::{Content, Press};
 use crate::plugin::{Due, Urgency};
 use crate::shortcut::Shortcut;
 
@@ -25,16 +25,8 @@ use crate::shortcut::Shortcut;
 pub(super) struct Board {
     due: Vec<Due>,
     shown: Option<Due>,
-    press: Option<(usize, bool)>,
+    press: Press,
     ticked: Option<Due>,
-    displayed: bool,
-    tasks: Vec<(String, Checkbox)>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct Change {
-    pub(super) appeared: bool,
-    pub(super) vanished: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -45,11 +37,9 @@ pub(super) enum Released {
 
 impl Board {
     pub(super) fn interrupt(&mut self) -> Option<Due> {
-        self.press = None;
+        self.press = Press::default();
         self.ticked = None;
-        let shown = self.shown.take();
-        self.refresh();
-        shown
+        self.shown.take()
     }
 
     pub(super) fn is_displayed(&self) -> bool {
@@ -78,50 +68,35 @@ impl Board {
         let rows = self.shown.as_ref().map_or(0, |due| {
             due.notice.tasks.len() + usize::from(due.notice.checkbox.is_some())
         });
-        if item < rows {
-            self.press = Some((item, true));
-        }
-        self.refresh();
+        self.press.begin(item, rows);
     }
 
     pub(super) fn drag(&mut self, inside: bool) {
-        if let Some((_, pressed)) = &mut self.press {
-            *pressed = inside;
-        }
-        self.refresh();
+        self.press.drag(inside);
     }
 
     pub(super) fn release(&mut self, inside: bool) -> Option<Released> {
-        let released = match (self.press.take(), self.shown.clone()) {
-            (Some((item, _)), Some(due)) if inside => {
-                let tasks = &due.notice.tasks;
-                let completes = tasks.get(item).is_some_and(|(_, done)| !done)
-                    && (0..tasks.len()).all(|other| other == item || tasks[other].1);
-                if item == tasks.len() {
-                    self.tick().map(Released::Checked)
-                } else if completes && due.notice.checkbox.is_some() {
-                    self.tick_with_every_task().map(Released::Checked)
-                } else {
-                    Some(Released::Toggled(due, item))
-                }
-            }
-            _ => None,
-        };
-        self.refresh();
-        released
+        let item = self.press.release(inside)?;
+        let due = self.shown.clone()?;
+        let tasks = &due.notice.tasks;
+        let completes = tasks.get(item).is_some_and(|(_, done)| !done)
+            && (0..tasks.len()).all(|other| other == item || tasks[other].1);
+        if item == tasks.len() {
+            self.tick().map(Released::Checked)
+        } else if completes && due.notice.checkbox.is_some() {
+            self.finish(true).map(Released::Checked)
+        } else {
+            Some(Released::Toggled(due, item))
+        }
     }
 
     pub(super) fn tick(&mut self) -> Option<Due> {
         self.finish(false)
     }
 
-    fn tick_with_every_task(&mut self) -> Option<Due> {
-        self.finish(true)
-    }
-
     fn finish(&mut self, every_task: bool) -> Option<Due> {
         let due = self.shown.take_if(|due| due.notice.checkbox.is_some())?;
-        self.press = None;
+        self.press = Press::default();
         let mut ticked = due.clone();
         if every_task {
             for (_, done) in &mut ticked.notice.tasks {
@@ -129,11 +104,10 @@ impl Board {
             }
         }
         self.ticked = Some(ticked);
-        self.refresh();
         Some(due)
     }
 
-    pub(super) fn update(&mut self, due: &[Due], present: bool, celebrating: bool) -> Change {
+    pub(super) fn update(&mut self, due: &[Due], present: bool, celebrating: bool) -> bool {
         if !present || !celebrating {
             self.ticked = None;
         }
@@ -167,62 +141,22 @@ impl Board {
             _ => false,
         };
         if !same {
-            self.press = None;
+            self.press = Press::default();
         }
-        let displayed = self.is_displayed();
-        let change = Change {
-            appeared: self.shown.is_some() && !same,
-            vanished: self.displayed && !displayed,
-        };
-        self.displayed = displayed;
-        self.refresh();
-        change
+        self.shown.is_some() && !same
     }
 
     pub(super) fn content(&self) -> Option<Content<'_>> {
-        let (due, checked) = self.on_display()?;
-        let pressed = self.pressed() == Some(due.notice.tasks.len());
+        let (due, checked) = match (&self.ticked, &self.shown) {
+            (Some(ticked), _) => (ticked, true),
+            (None, shown) => (shown.as_ref()?, false),
+        };
+        let checkbox = due.notice.checkbox.as_deref();
         Some(Content::Notice {
             text: &due.notice.text,
-            tasks: &self.tasks,
-            checkbox: due
-                .notice
-                .checkbox
-                .as_deref()
-                .map(|label| (label, Checkbox { checked, pressed })),
+            tasks: &due.notice.tasks,
+            checkbox: checkbox.map(|label| (label, checked)),
+            press: self.press,
         })
-    }
-
-    fn on_display(&self) -> Option<(&Due, bool)> {
-        match (&self.ticked, &self.shown) {
-            (Some(ticked), _) => Some((ticked, true)),
-            (None, Some(shown)) => Some((shown, false)),
-            (None, None) => None,
-        }
-    }
-
-    fn pressed(&self) -> Option<usize> {
-        self.press
-            .filter(|_| self.ticked.is_none())
-            .and_then(|(item, inside)| inside.then_some(item))
-    }
-
-    fn refresh(&mut self) {
-        let pressed = self.pressed();
-        self.tasks = self
-            .on_display()
-            .map(|(due, _)| {
-                (0..)
-                    .zip(&due.notice.tasks)
-                    .map(|(item, (label, done))| {
-                        let state = Checkbox {
-                            checked: *done,
-                            pressed: pressed == Some(item),
-                        };
-                        (label.clone(), state)
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
     }
 }

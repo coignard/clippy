@@ -32,8 +32,6 @@ pub(super) enum TextAction {
     Redo,
 }
 
-const COMMAND_SHIFT: Modifiers = Modifiers::COMMAND.union(Modifiers::SHIFT);
-
 const ANSI_LETTERS: [(u16, char); 5] = [
     (0x00, 'a'),
     (0x08, 'c'),
@@ -125,7 +123,7 @@ pub(super) fn shortcut(event: &NSEvent) -> Option<TextAction> {
         (Modifiers::COMMAND, 'x') => Some(TextAction::Cut),
         (Modifiers::COMMAND, 'v') => Some(TextAction::Paste),
         (Modifiers::COMMAND, 'z') => Some(TextAction::Undo),
-        (COMMAND_SHIFT, 'z') => Some(TextAction::Redo),
+        (Modifiers::COMMAND_SHIFT, 'z') => Some(TextAction::Redo),
         _ => None,
     }
 }
