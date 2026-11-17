@@ -107,7 +107,7 @@ impl<'a> Layout<'a> {
             .max()
             .unwrap_or(0);
         let text_width = match content {
-            Content::Prompt { .. } => MAX_TEXT_WIDTH,
+            Content::Prompt { .. } if field.is_some() => MAX_TEXT_WIDTH,
             _ => longest.max(row).clamp(MIN_TEXT_WIDTH, MAX_TEXT_WIDTH),
         };
         let chrome = 2 * (BORDER + PADDING);

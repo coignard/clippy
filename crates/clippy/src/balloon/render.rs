@@ -374,7 +374,21 @@ mod tests {
         assert_eq!(layout.separator(placement), None);
         let rows = layout.checkboxes(placement);
         assert_eq!(rows.len(), 2);
-        assert_eq!(layout.size().width, with_field.width);
+        let tasks = [
+            ("Post the letter".to_owned(), false),
+            ("Buy bread".to_owned(), false),
+        ];
+        let checklist = Layout::new(Content::Checklist {
+            title: "",
+            items: &tasks,
+            press: Press::default(),
+        });
+        assert!(layout.size().width < with_field.width);
+        assert_eq!(
+            layout.size().width,
+            checklist.size().width,
+            "the balloon hugs its tasks instead of keeping room for the field"
+        );
         assert_eq!(
             layout.size().height,
             with_field.height - (8 + 1 + 8 + 21),
