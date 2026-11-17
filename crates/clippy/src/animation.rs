@@ -255,8 +255,7 @@ fn idle_state(
         .states
         .iter()
         .find(|candidate| candidate.name.eq_ignore_ascii_case(state))
-        .map(|state| state.animations.as_slice())
-        .unwrap_or_default();
+        .map_or_default(|state| state.animations.as_slice());
     if animations.is_empty() {
         return Err(LibraryError::EmptyState(state));
     }

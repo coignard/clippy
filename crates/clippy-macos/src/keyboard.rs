@@ -52,8 +52,7 @@ pub(crate) fn key_equivalent(key: Key) -> String {
     };
     unicode
         .and_then(char::from_u32)
-        .map(String::from)
-        .unwrap_or_default()
+        .map_or_default(String::from)
 }
 
 pub(crate) fn event_modifiers(modifiers: Modifiers) -> NSEventModifierFlags {

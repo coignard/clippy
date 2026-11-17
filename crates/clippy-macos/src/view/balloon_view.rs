@@ -450,8 +450,7 @@ fn plain(text: &AnyObject) -> String {
         Some(attributed) => attributed.string().to_string(),
         None => text
             .downcast_ref::<NSString>()
-            .map(NSString::to_string)
-            .unwrap_or_default(),
+            .map_or_default(NSString::to_string),
     }
 }
 

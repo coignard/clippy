@@ -229,8 +229,7 @@ impl Harness {
     pub fn asked_tasks(&self) -> Vec<String> {
         self.plugins
             .prompt()
-            .map(|prompt| prompt.tasks().map(str::to_owned).collect())
-            .unwrap_or_default()
+            .map_or_default(|prompt| prompt.tasks().map(str::to_owned).collect())
     }
 
     pub fn tick_asked_task(&mut self, label: &str) {

@@ -76,7 +76,7 @@ impl Progress {
             .ticked
             .take()
             .filter(|ticked| ticked.occurrence == occurrence);
-        let mut tasks = ticked.map(|ticked| ticked.tasks).unwrap_or_default();
+        let mut tasks = ticked.map_or_default(|ticked| ticked.tasks);
         if !tasks.remove(&task) {
             tasks.insert(task);
         }

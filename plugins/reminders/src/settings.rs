@@ -196,10 +196,9 @@ impl TryFrom<RawReminder> for Reminder {
 
     fn try_from(raw: RawReminder) -> Result<Self, Self::Error> {
         let text = raw.text.trim().to_owned();
-        let tasks: Vec<String> = raw
-            .tasks
-            .map(|OneOrMany(tasks)| tasks.iter().map(|task| task.trim().to_owned()).collect())
-            .unwrap_or_default();
+        let tasks: Vec<String> = raw.tasks.map_or_default(|OneOrMany(tasks)| {
+            tasks.iter().map(|task| task.trim().to_owned()).collect()
+        });
         if text.is_empty() && tasks.is_empty() {
             return Err(SettingsError::NoText);
         }

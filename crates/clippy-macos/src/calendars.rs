@@ -170,8 +170,7 @@ fn appointment(event: &EKEvent, zone: &TimeZone) -> Option<Appointment> {
             ),
             calendar: event
                 .calendar()
-                .map(|calendar| calendar.title().to_string())
-                .unwrap_or_default(),
+                .map_or_default(|calendar| calendar.title().to_string()),
             title: event.title().to_string(),
             start: civil(&event.startDate(), zone)?,
             end: civil(&event.endDate(), zone)?,
