@@ -28,6 +28,7 @@ pub mod geometry;
 pub mod graphics;
 pub mod hours;
 mod hover;
+mod icon;
 pub mod menu;
 mod plugin;
 mod scene;
@@ -42,6 +43,7 @@ pub use app::{App, Builder, Command, Effect, Event};
 pub use balloon::{Edit, Motion, Utf16Range};
 pub use character::portrait;
 pub use hover::Hover;
+pub use icon::icon;
 pub use plugin::{
     Checklist, Context, MenuItem, Message, NoSettings, Notice, Plugin, PluginItem, Question,
     Urgency,

@@ -31,7 +31,9 @@ type Failure = Box<dyn Error + Send + Sync>;
 #[derive(Parser)]
 #[command(bin_name = "cargo xtask", about)]
 enum Task {
-    #[command(about = "Builds an ad hoc signed Clippy.app and prints where it is")]
+    #[command(
+        about = "Builds an ad hoc signed Clippy.app, or Clippy.exe on Windows, and prints where it is"
+    )]
     Bundle {
         #[arg(long, help = "Runs on both Apple silicon and Intel Macs")]
         universal: bool,

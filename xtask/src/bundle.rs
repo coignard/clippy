@@ -22,7 +22,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use cargo_metadata::{Message, MetadataCommand};
-use clippy::graphics::Canvas;
 use icns::{IconFamily, IconType, Image, PixelFormat};
 use serde::Serialize;
 
@@ -30,6 +29,7 @@ use crate::Failure;
 
 const NAME: &str = "Clippy";
 const EXECUTABLE: &str = "clippy-macos";
+const WINDOWS_EXECUTABLE: &str = "clippy-windows";
 const IDENTIFIER: &str = "com.renecoignard.clippy";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const MINIMUM_SYSTEM: &str = "11.0";
@@ -48,13 +48,6 @@ const ICONS: [IconType; 10] = [
     IconType::RGBA32_512x512,
     IconType::RGBA32_512x512_2x,
 ];
-
-struct Bounds {
-    left: u32,
-    top: u32,
-    width: u32,
-    height: u32,
-}
 
 #[derive(Serialize)]
 struct Information {
@@ -91,10 +84,13 @@ struct Information {
 }
 
 pub(crate) fn bundle(universal: bool) -> Result<(), Failure> {
+    if cfg!(windows) {
+        return bundle_for_windows(universal);
+    }
     let executable = if universal {
         build_universal()?
     } else {
-        build(None)?
+        build(EXECUTABLE, None)?
     };
     let app = executable.with_file_name(format!("{NAME}.app"));
     assemble(&app, &executable)?;
@@ -108,10 +104,23 @@ pub(crate) fn bundle(universal: bool) -> Result<(), Failure> {
     Ok(())
 }
 
+fn bundle_for_windows(universal: bool) -> Result<(), Failure> {
+    if universal {
+        return Err(
+            "--universal is for Macs; on Windows, cargo xtask bundle makes Clippy.exe".into(),
+        );
+    }
+    let built = build(WINDOWS_EXECUTABLE, None)?;
+    let executable = built.with_file_name(format!("{NAME}.exe"));
+    fs::copy(&built, &executable)?;
+    println!("{}", executable.display());
+    Ok(())
+}
+
 fn build_universal() -> Result<PathBuf, Failure> {
     let slices = ARCHITECTURES
         .into_iter()
-        .map(|target| build(Some(target)))
+        .map(|target| build(EXECUTABLE, Some(target)))
         .collect::<Result<Vec<_>, _>>()?;
     let directory = MetadataCommand::new()
         .current_dir(workspace()?)
@@ -133,11 +142,11 @@ fn build_universal() -> Result<PathBuf, Failure> {
     Ok(executable)
 }
 
-fn build(target: Option<&str>) -> Result<PathBuf, Failure> {
+fn build(package: &str, target: Option<&str>) -> Result<PathBuf, Failure> {
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let mut build = Command::new(cargo)
         .current_dir(workspace()?)
-        .args(["build", "--release", "--locked", "--package", EXECUTABLE])
+        .args(["build", "--release", "--locked", "--package", package])
         .args(target.into_iter().flat_map(|target| ["--target", target]))
         .arg("--message-format=json-render-diagnostics")
         .stdout(Stdio::piped())
@@ -149,7 +158,7 @@ fn build(target: Option<&str>) -> Result<PathBuf, Failure> {
     let mut executable = None;
     for message in Message::parse_stream(BufReader::new(output)) {
         if let Message::CompilerArtifact(artifact) = message?
-            && artifact.target.name == EXECUTABLE
+            && artifact.target.name == package
         {
             executable = artifact.executable.or(executable);
         }
@@ -211,64 +220,16 @@ fn information() -> Information {
 }
 
 fn icon() -> Result<IconFamily, Failure> {
-    let portrait = clippy::portrait();
-    let bounds = opaque_bounds(&portrait)?;
     let mut family = IconFamily::new();
     for kind in ICONS {
         let size = kind.pixel_width();
-        let pixels = square(&portrait, &bounds, size)?;
+        let pixels = clippy::icon(i32::try_from(size)?).rgba().to_vec();
         family.add_icon_with_type(
             &Image::from_data(PixelFormat::RGBA, size, size, pixels)?,
             kind,
         )?;
     }
     Ok(family)
-}
-
-fn opaque_bounds(canvas: &Canvas) -> Result<Bounds, Failure> {
-    let width = u32::try_from(canvas.size().width)?;
-    let (left, top, right, bottom) = (0..)
-        .zip(canvas.rgba().as_chunks::<4>().0)
-        .filter(|(_, pixel)| pixel[3] != 0)
-        .map(|(index, _)| (index % width, index / width))
-        .fold(None, |edges: Option<(u32, u32, u32, u32)>, (x, y)| {
-            Some(edges.map_or((x, y, x, y), |(left, top, right, bottom)| {
-                (left.min(x), top.min(y), right.max(x), bottom.max(y))
-            }))
-        })
-        .ok_or("Clippy should be visible at rest")?;
-    Ok(Bounds {
-        left,
-        top,
-        width: right - left + 1,
-        height: bottom - top + 1,
-    })
-}
-
-fn square(canvas: &Canvas, bounds: &Bounds, size: u32) -> Result<Vec<u8>, Failure> {
-    let room = size * 7 / 8;
-    let longest = bounds.width.max(bounds.height);
-    let (width, height) = match room / longest {
-        0 => (
-            bounds.width * room / longest,
-            bounds.height * room / longest,
-        ),
-        factor => (bounds.width * factor, bounds.height * factor),
-    };
-    let (left, top) = ((size - width) / 2, (size - height) / 2);
-    let stride = u32::try_from(canvas.size().width)?;
-    let source = canvas.rgba();
-    let mut pixels = vec![0; usize::try_from(size * size * 4)?];
-    for y in top..top + height {
-        for x in left..left + width {
-            let from_x = bounds.left + (x - left) * bounds.width / width;
-            let from_y = bounds.top + (y - top) * bounds.height / height;
-            let from = usize::try_from((from_y * stride + from_x) * 4)?;
-            let to = usize::try_from((y * size + x) * 4)?;
-            pixels[to..to + 4].copy_from_slice(&source[from..from + 4]);
-        }
-    }
-    Ok(pixels)
 }
 
 #[cfg(test)]

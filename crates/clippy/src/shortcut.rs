@@ -285,7 +285,7 @@ impl FromStr for Shortcut {
         {
             let name = name.trim();
             modifiers |= match name.to_ascii_lowercase().as_str() {
-                "cmd" | "command" => Modifiers::COMMAND,
+                "cmd" | "command" | "win" | "windows" | "super" => Modifiers::COMMAND,
                 "ctrl" | "control" => Modifiers::CONTROL,
                 "opt" | "option" | "alt" => Modifiers::OPTION,
                 "shift" => Modifiers::SHIFT,
@@ -379,6 +379,13 @@ mod tests {
         assert_eq!(parse("Cmd+Shift+⌫"), parse("Cmd+Shift+Delete"));
         assert_eq!(parse("Cmd+⌦"), parse("Cmd+ForwardDelete"));
         assert_eq!(parse("Cmd+forward delete"), parse("Cmd+ForwardDelete"));
+    }
+
+    #[test]
+    fn the_windows_key_stands_in_for_command() {
+        assert_eq!(parse("Win+Shift+|"), parse("Cmd+Shift+|"));
+        assert_eq!(parse("windows+alt+k"), parse("Cmd+Option+K"));
+        assert_eq!(parse("Super+Space"), parse("Cmd+Space"));
     }
 
     #[test]
