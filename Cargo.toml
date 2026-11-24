@@ -29,7 +29,7 @@ dispatch2 = "0.3"
 enum-map = "3.1"
 env_logger = { version = "0.11", default-features = false, features = ["auto-color"] }
 fastrand = "2.5"
-global-hotkey = "0.9"
+global-hotkey = "0.10"
 hound = "3.5"
 icns = { version = "0.5", default-features = false, features = ["pngio"] }
 jiff = { version = "0.2", features = ["serde"] }
