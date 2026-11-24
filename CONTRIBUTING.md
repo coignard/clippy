@@ -10,7 +10,7 @@ cargo test --workspace
 cargo xtask bundle
 ```
 
-Clippy itself and its plugins build and test on any operating system. The macOS shell needs a Mac, so elsewhere leave it out:
+Clippy itself and its plugins build and test on any operating system. The macOS shell needs a Mac, so elsewhere leave it out. The Windows shell builds anywhere but only does something on Windows, where `cargo xtask bundle` makes `Clippy.exe`:
 
 ```bash
 cargo build --workspace --exclude clippy-macos
@@ -51,6 +51,7 @@ CI runs the same checks as these commands:
 cargo fmt --all --check
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --all-features --target aarch64-apple-darwin -- -D warnings
+cargo clippy --workspace --exclude clippy-macos --all-targets --all-features --target x86_64-pc-windows-msvc -- -D warnings
 cargo clippy --workspace --exclude clippy-macos --all-targets --all-features -- -D warnings
 cargo deny check
 ```

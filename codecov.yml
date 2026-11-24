@@ -18,6 +18,7 @@ coverage:
         threshold: 1%
 ignore:
   - "crates/clippy-macos"
+  - "crates/clippy-windows"
   - "crates/clippy/src/testing.rs"
   - "xtask"
 comment:

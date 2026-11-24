@@ -1,11 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.1.6
 
-### Fixed
+### Added
 
-- A checklist asked for while a question is open shows instead of opening unseen behind the question
-- A checklist's shortcut brings the checklist out from under a reminder instead of closing it unseen
+- Clippy runs on the Windows desktop
 
 ## 0.1.5
 
