@@ -57,6 +57,9 @@ jobs:
     - name: Bundle Clippy.app
       if: runner.os == 'macOS'
       run: cargo xtask bundle
+    - name: Bundle Clippy.exe
+      if: runner.os == 'Windows'
+      run: cargo xtask bundle
 
   msrv:
     name: MSRV
@@ -66,9 +69,11 @@ jobs:
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: 1.99.0
-        targets: aarch64-apple-darwin
+        targets: aarch64-apple-darwin, x86_64-pc-windows-msvc
     - name: Check the minimum supported Rust version
       run: cargo +1.99.0 check --workspace --all-targets --target aarch64-apple-darwin
+    - name: Check the minimum supported Rust version on Windows
+      run: cargo +1.99.0 check --workspace --exclude clippy-macos --all-targets --target x86_64-pc-windows-msvc
 
   clippy:
     name: Clippy
@@ -78,9 +83,11 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
       with:
         components: clippy
-        targets: aarch64-apple-darwin
+        targets: aarch64-apple-darwin, x86_64-pc-windows-msvc
     - name: Run clippy for macOS
       run: cargo clippy --workspace --all-targets --all-features --target aarch64-apple-darwin -- -D warnings
+    - name: Run clippy for Windows
+      run: cargo clippy --workspace --exclude clippy-macos --all-targets --all-features --target x86_64-pc-windows-msvc -- -D warnings
     - name: Run clippy for Linux
       run: cargo clippy --workspace --exclude clippy-macos --all-targets --all-features -- -D warnings
 

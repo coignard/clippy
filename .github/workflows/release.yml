@@ -74,3 +74,39 @@ jobs:
       - uses: actions/attest@v4
         with:
           subject-path: ${{ steps.archive.outputs.path }}
+
+  upload-windows-assets:
+    needs: create-release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Bundle Clippy.exe
+        id: bundle
+        run: |
+          exe=$(cargo xtask bundle)
+          echo "exe=$exe" >> "$GITHUB_OUTPUT"
+      - name: Archive Clippy.exe
+        id: archive
+        run: |
+          archive="Clippy-${GITHUB_REF_NAME}-x86_64-pc-windows-msvc.zip"
+          7z a -tzip "$archive" "$EXE"
+          sha256sum "$archive" > "$archive.sha256"
+          echo "path=$archive" >> "$GITHUB_OUTPUT"
+        env:
+          EXE: ${{ steps.bundle.outputs.exe }}
+      - name: Upload Clippy.exe
+        run: gh release upload "$GITHUB_REF_NAME" "$ARCHIVE" "$ARCHIVE.sha256"
+        env:
+          ARCHIVE: ${{ steps.archive.outputs.path }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/attest@v4
+        with:
+          subject-path: ${{ steps.archive.outputs.path }}
