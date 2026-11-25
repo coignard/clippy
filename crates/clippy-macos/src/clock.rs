@@ -16,11 +16,11 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use jiff::tz::{self, TimeZone};
-use jiff::{Timestamp, Zoned};
+use jiff::{Timestamp, ZonedDateTime};
 use objc2_foundation::NSTimeZone;
 
-pub(crate) fn now() -> Zoned {
-    Timestamp::now().to_zoned(time_zone())
+pub(crate) fn now() -> ZonedDateTime {
+    Timestamp::now().to_zoned_datetime(time_zone())
 }
 
 pub(crate) fn forget_time_zone() {

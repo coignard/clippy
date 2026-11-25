@@ -17,7 +17,7 @@
 
 use std::time::Instant;
 
-use jiff::Zoned;
+use jiff::ZonedDateTime;
 use jiff::civil::DateTime;
 
 use crate::app::{App, Clock};
@@ -42,7 +42,7 @@ impl Builder {
     }
 
     #[must_use]
-    pub fn clock(mut self, clock: impl Fn(Instant) -> Zoned + 'static) -> Self {
+    pub fn clock(mut self, clock: impl Fn(Instant) -> ZonedDateTime + 'static) -> Self {
         self.clock = Some(Box::new(clock));
         self
     }
@@ -81,7 +81,7 @@ impl Builder {
         let clock = self
             .clock
             .take()
-            .unwrap_or_else(|| Box::new(|_| Zoned::now()));
+            .unwrap_or_else(|| Box::new(|_| ZonedDateTime::now()));
         warn_about_clashes(&settings, &plugins, clock(Instant::now()).datetime());
         plugins.keep_in(storage);
         App::assemble(settings, plugins, clock)

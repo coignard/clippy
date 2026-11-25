@@ -23,7 +23,7 @@ use clippy::calendar::{Agenda, Appointment};
 use dispatch2::DispatchQueue;
 use jiff::civil::DateTime;
 use jiff::tz::TimeZone;
-use jiff::{SignedDuration, Timestamp, ToSpan, Zoned};
+use jiff::{SignedDuration, Timestamp, ToSpan, ZonedDateTime};
 use objc2::rc::Retained;
 use objc2::runtime::Bool;
 use objc2::{MainThreadMarker, available};
@@ -75,7 +75,7 @@ impl Calendars {
         }
     }
 
-    pub(crate) fn agenda(&self, now: &Zoned) -> Option<Agenda> {
+    pub(crate) fn agenda(&self, now: &ZonedDateTime) -> Option<Agenda> {
         match unsafe { EKEventStore::authorizationStatusForEntityType(EKEntityType::Event) } {
             EKAuthorizationStatus::FullAccess => {
                 if !self.granted.replace(true) {
@@ -116,7 +116,7 @@ impl Calendars {
         }
     }
 
-    fn appointments(&self, now: &Zoned) -> Vec<Appointment> {
+    fn appointments(&self, now: &ZonedDateTime) -> Vec<Appointment> {
         let Some((from, until)) = now.start_of_day().ok().and_then(|from| {
             Some((
                 from.timestamp(),

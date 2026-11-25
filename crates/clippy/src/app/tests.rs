@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use jiff::civil::{Date, date, time};
 use jiff::tz::TimeZone;
-use jiff::{SignedDuration, Timestamp, Zoned};
+use jiff::{SignedDuration, Timestamp, ZonedDateTime};
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 
@@ -594,7 +594,7 @@ impl Plugin for Sleeper {
 
 struct Day {
     origin: Instant,
-    start: Zoned,
+    start: ZonedDateTime,
 }
 
 impl Day {
@@ -605,7 +605,7 @@ impl Day {
     fn of(day: Date, zone: TimeZone, hour: i8, minute: i8) -> Self {
         Self {
             origin: Instant::now(),
-            start: day.at(hour, minute, 0, 0).to_zoned(zone).unwrap(),
+            start: day.at(hour, minute, 0, 0).to_zoned_datetime(zone).unwrap(),
         }
     }
 
@@ -615,7 +615,7 @@ impl Day {
         self.origin + Duration::try_from(elapsed).unwrap()
     }
 
-    fn clock(&self) -> impl Fn(Instant) -> Zoned + 'static {
+    fn clock(&self) -> impl Fn(Instant) -> ZonedDateTime + 'static {
         let (origin, start) = (self.origin, self.start.clone());
         move |now| {
             let elapsed = SignedDuration::try_from(now.saturating_duration_since(origin));
@@ -2434,7 +2434,7 @@ fn changes_wake_clippy_when_the_wall_clock_first_reaches_them() {
     let europe = TimeZone::posix("CET-1CEST,M3.5.0,M10.5.0/3").unwrap();
     let at = |day: Date, hour, minute| day.at(hour, minute, 0, 0);
     let utc = |text: &str| text.parse::<Timestamp>().unwrap();
-    let zoned = |text: &str| utc(text).to_zoned(europe.clone());
+    let zoned = |text: &str| utc(text).to_zoned_datetime(europe.clone());
 
     let spring = date(2026, 3, 29);
     let skipped = first_reached(at(spring, 2, 30), &zoned("2026-03-29T00:50:00Z"));

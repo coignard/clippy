@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 use fastrand::Rng;
 use jiff::civil::DateTime;
 use jiff::tz::AmbiguousOffset;
-use jiff::{Timestamp, Zoned};
+use jiff::{Timestamp, ZonedDateTime};
 
 use crate::animation::Animation;
 use crate::balloon::{Content, Edit, Layout, Placement, Prompt, SCREEN_MARGIN};
@@ -43,7 +43,7 @@ pub use builder::Builder;
 use notices::{Board, Released};
 use visibility::{Lasts, Need, Visibility};
 
-type Clock = Box<dyn Fn(Instant) -> Zoned>;
+type Clock = Box<dyn Fn(Instant) -> ZonedDateTime>;
 
 const STEPPING_ASIDE: Duration = Duration::from_secs(1);
 
@@ -96,7 +96,7 @@ pub(crate) struct Moment {
 pub struct App {
     settings: Settings,
     clock: Clock,
-    time: Option<(Instant, Zoned)>,
+    time: Option<(Instant, ZonedDateTime)>,
     character: Character,
     plugins: Plugins,
     notices: Board,
@@ -672,7 +672,7 @@ impl App {
     }
 }
 
-fn first_reached(civil: DateTime, now: &Zoned) -> Option<Timestamp> {
+fn first_reached(civil: DateTime, now: &ZonedDateTime) -> Option<Timestamp> {
     let zone = now.time_zone();
     let ambiguous = zone.to_ambiguous_timestamp(civil);
     let candidates = match ambiguous.offset() {

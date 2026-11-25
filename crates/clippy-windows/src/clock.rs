@@ -23,7 +23,7 @@ use std::sync::OnceLock;
 use std::{mem, ptr};
 
 use jiff::tz::{self, TimeZone};
-use jiff::{Timestamp, Zoned};
+use jiff::{Timestamp, ZonedDateTime};
 use windows_sys::Win32::System::LibraryLoader::{
     GetProcAddress, LOAD_LIBRARY_SEARCH_SYSTEM32, LoadLibraryExW,
 };
@@ -41,8 +41,8 @@ thread_local! {
     static TIME_ZONE: RefCell<Option<TimeZone>> = const { RefCell::new(None) };
 }
 
-pub(crate) fn now() -> Zoned {
-    Timestamp::now().to_zoned(time_zone())
+pub(crate) fn now() -> ZonedDateTime {
+    Timestamp::now().to_zoned_datetime(time_zone())
 }
 
 pub(crate) fn forget_time_zone() {
