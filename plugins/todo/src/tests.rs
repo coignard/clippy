@@ -199,7 +199,7 @@ fn the_list_outlives_restarts_but_done_tasks_do_not() {
     drop(app);
     let mut app = launch();
     show(&mut app);
-    app.handle(Event::CheckboxPress { item: 1 }, Instant::now());
-    app.handle(Event::CheckboxRelease { inside: true }, Instant::now());
+    app.handle(Event::ControlPress { item: 1 }, Instant::now());
+    app.handle(Event::ControlRelease { inside: true }, Instant::now());
     assert_eq!(tasks(saved()), ["Pay the rent", "Call the bank"]);
 }

@@ -58,9 +58,9 @@ pub enum Event {
     PointerLeave,
     ClippyDoubleClick,
     MessageDoubleClick,
-    CheckboxPress { item: usize },
-    CheckboxDrag { inside: bool },
-    CheckboxRelease { inside: bool },
+    ControlPress { item: usize },
+    ControlDrag { inside: bool },
+    ControlRelease { inside: bool },
     Focus,
     Blur,
     FieldPress { x: i32, clicks: usize, extend: bool },
@@ -274,8 +274,8 @@ impl App {
                             wants_focus: prompt.wants_focus(),
                         },
                     ),
-                    checkboxes: layout
-                        .checkboxes(placement)
+                    controls: layout
+                        .controls(placement)
                         .into_iter()
                         .map(|area| area.scaled(scale))
                         .collect(),
@@ -339,20 +339,24 @@ impl App {
                     self.plugins.double_click(&mut self.character, moment);
                 }
             }
-            Event::CheckboxPress { item } if self.notices.is_displayed() => {
+            Event::ControlPress { item } if self.notices.is_displayed() => {
                 self.notices.press(item);
             }
-            Event::CheckboxPress { item } => self.plugins.press(item),
-            Event::CheckboxDrag { inside } => {
+            Event::ControlPress { item } => self.plugins.press(item),
+            Event::ControlDrag { inside } => {
                 self.notices.drag(inside);
                 self.plugins.drag(inside);
             }
-            Event::CheckboxRelease { inside } => {
+            Event::ControlRelease { inside } => {
                 match self.notices.release(inside) {
                     Some(Released::Checked(due)) => self.check(&due, moment),
                     Some(Released::Toggled(due, task)) => {
                         self.plugins
                             .toggle_task(&due, task, &mut self.character, moment);
+                    }
+                    Some(Released::Clicked(due, button)) => {
+                        self.plugins
+                            .click(&due, button, &mut self.character, moment);
                     }
                     None => {}
                 }

@@ -32,6 +32,7 @@ pub(crate) enum Trigger<'a> {
     Snooze(&'a str),
     Check(&'a str),
     ToggleTask(&'a str, usize),
+    Click(&'a str, usize),
     Toggle(usize),
 }
 
@@ -128,6 +129,7 @@ impl<P: Plugin> Installed<P> {
             Trigger::Snooze(id) => Some(notice(id)?.on_snooze),
             Trigger::Check(id) => notice(id)?.on_check,
             Trigger::ToggleTask(id, task) => notice(id)?.on_toggle.into_iter().nth(task),
+            Trigger::Click(id, button) => notice(id)?.on_click.into_iter().nth(button),
             Trigger::Toggle(item) => {
                 let checklist = plugin.checklist(settings, now)?;
                 checklist.on_toggle.into_iter().nth(item)

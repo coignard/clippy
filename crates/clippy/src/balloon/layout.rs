@@ -23,7 +23,7 @@ use unicode_linebreak::{BreakOpportunity, linebreaks};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::assets::FONT;
-use crate::balloon::controls::CHECKBOX;
+use crate::balloon::controls::{BUTTON_HEIGHT, BUTTON_PADDING, BUTTON_WIDTH, CHECKBOX};
 use crate::balloon::{Content, Placement};
 use crate::geometry::{Rect, Size};
 
@@ -42,6 +42,8 @@ pub(super) const LABEL_GAP: i32 = 6;
 const CONTROL_GAP: i32 = 6;
 const ROW_GAP: i32 = 4;
 const SEPARATOR_GAP: i32 = 8;
+const BUTTON_ROW_GAP: i32 = 8;
+const BUTTON_GAP: i32 = 10;
 const FIELD_HEIGHT: i32 = LINE_HEIGHT + 8;
 
 pub(crate) struct Layout<'a> {
@@ -51,6 +53,7 @@ pub(crate) struct Layout<'a> {
     tops: Vec<i32>,
     separator: Option<i32>,
     field: Option<i32>,
+    buttons: Vec<Rect>,
     text_width: i32,
     body: Size,
 }
@@ -100,6 +103,16 @@ impl<'a> Layout<'a> {
                 y = top + FIELD_HEIGHT;
                 top
             });
+        let captions: Vec<&str> = content
+            .buttons()
+            .into_iter()
+            .map(|(caption, _)| caption)
+            .collect();
+        let button_row = (!captions.is_empty()).then(|| {
+            let top = if y > 0 { y + BUTTON_ROW_GAP } else { y };
+            y = top + BUTTON_HEIGHT;
+            top
+        });
         let row = rows
             .iter()
             .zip(&labels)
@@ -109,7 +122,9 @@ impl<'a> Layout<'a> {
         let text_width = match content {
             Content::Prompt { .. } if field.is_some() => MAX_TEXT_WIDTH,
             _ => longest.max(row).clamp(MIN_TEXT_WIDTH, MAX_TEXT_WIDTH),
-        };
+        }
+        .max(button_row_width(&captions));
+        let buttons = button_row.map_or_default(|top| spread(captions.len(), top, text_width));
         let chrome = 2 * (BORDER + PADDING);
         Self {
             content,
@@ -119,6 +134,7 @@ impl<'a> Layout<'a> {
             tops,
             separator,
             field,
+            buttons,
             text_width,
         }
     }
@@ -140,6 +156,20 @@ impl<'a> Layout<'a> {
             .zip(&self.labels)
             .map(|(row, label)| Rect::new(left, top + row, self.text_width, row_height(label)))
             .collect()
+    }
+
+    pub(crate) fn buttons(&self, placement: Placement) -> Vec<Rect> {
+        let (left, top) = self.text_origin(placement);
+        self.buttons
+            .iter()
+            .map(|button| Rect::new(left + button.x, top + button.y, button.width, button.height))
+            .collect()
+    }
+
+    pub(crate) fn controls(&self, placement: Placement) -> Vec<Rect> {
+        let mut controls = self.checkboxes(placement);
+        controls.extend(self.buttons(placement));
+        controls
     }
 
     pub(super) fn separator(&self, placement: Placement) -> Option<Rect> {
@@ -165,6 +195,27 @@ fn widest(text: &str, lines: &[Range<usize>]) -> i32 {
         .map(|line| FONT.width(&text[line.clone()]))
         .max()
         .unwrap_or(0)
+}
+
+fn button_row_width(captions: &[&str]) -> i32 {
+    let widest = captions
+        .iter()
+        .map(|caption| FONT.width(caption) + 2 * BUTTON_PADDING)
+        .fold(BUTTON_WIDTH, i32::max);
+    let count = i32::try_from(captions.len()).unwrap_or(i32::MAX);
+    (count.saturating_mul(widest + BUTTON_GAP) - BUTTON_GAP).max(0)
+}
+
+fn spread(count: usize, top: i32, width: i32) -> Vec<Rect> {
+    let count = i32::try_from(count).unwrap_or(i32::MAX);
+    let start = |index: i32| index * (width + BUTTON_GAP) / count;
+    (0..count)
+        .map(|index| {
+            let left = start(index);
+            let right = start(index + 1) - BUTTON_GAP;
+            Rect::new(left, top, right - left, BUTTON_HEIGHT)
+        })
+        .collect()
 }
 
 fn row_height(label: &[Range<usize>]) -> i32 {

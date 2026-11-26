@@ -53,11 +53,11 @@ pub(crate) struct BalloonView {
     window: HWND,
     surface: Surface,
     field: Cell<Option<Field>>,
-    checkboxes: RefCell<Vec<Rect>>,
+    controls: RefCell<Vec<Rect>>,
     placed: Cell<Placed>,
     clicks: Clicks,
     selecting: Cell<bool>,
-    ticking: Cell<Option<usize>>,
+    pressing: Cell<Option<usize>>,
     dragging: Cell<Option<Drag>>,
     marked: Cell<Option<Utf16Range>>,
     surrogate: Cell<Option<u16>>,
@@ -75,11 +75,11 @@ impl BalloonView {
             window,
             surface: Surface::new(window),
             field: Cell::new(None),
-            checkboxes: RefCell::new(Vec::new()),
+            controls: RefCell::new(Vec::new()),
             placed: Cell::default(),
             clicks: Clicks::default(),
             selecting: Cell::new(false),
-            ticking: Cell::new(None),
+            pressing: Cell::new(None),
             dragging: Cell::new(None),
             marked: Cell::new(None),
             surrogate: Cell::new(None),
@@ -122,7 +122,7 @@ impl BalloonView {
         &self,
         canvas: &Canvas,
         field: Option<Field>,
-        checkboxes: &[Rect],
+        controls: &[Rect],
         origin: (i32, i32),
         scale: i32,
     ) {
@@ -130,7 +130,7 @@ impl BalloonView {
             self.marked.set(None);
         }
         self.field.set(field);
-        checkboxes.clone_into(&mut self.checkboxes.borrow_mut());
+        controls.clone_into(&mut self.controls.borrow_mut());
         self.placed.set(Placed { origin, scale });
         self.surface.present(canvas, origin, scale);
         super::bring_forward(self.window);
@@ -173,10 +173,10 @@ impl BalloonView {
     fn mouse_down(&self, lparam: LPARAM) {
         let (x, y) = self.placed.get().inside(win32::point(lparam));
         let clicks = self.clicks.press(win32::cursor());
-        if let Some(item) = self.checkbox_at(x, y) {
-            self.ticking.set(Some(item));
+        if let Some(item) = self.control_at(x, y) {
+            self.pressing.set(Some(item));
             unsafe { SetCapture(self.window) };
-            super::send(Event::CheckboxPress { item });
+            super::send(Event::ControlPress { item });
         } else if let Some(x) = self.field_x(x, y) {
             self.discard_marked_text();
             self.selecting.set(true);
@@ -199,9 +199,9 @@ impl BalloonView {
         let (x, y) = self.placed.get().inside(win32::point(lparam));
         if let Some(drag) = self.dragging.get() {
             super::drag(drag);
-        } else if let Some(item) = self.ticking.get() {
-            super::send(Event::CheckboxDrag {
-                inside: self.checkbox_at(x, y) == Some(item),
+        } else if let Some(item) = self.pressing.get() {
+            super::send(Event::ControlDrag {
+                inside: self.control_at(x, y) == Some(item),
             });
         } else if self.selecting.get()
             && let Some(field) = self.field.get()
@@ -216,11 +216,11 @@ impl BalloonView {
         let (x, y) = self.placed.get().inside(win32::point(lparam));
         self.selecting.set(false);
         let dragged = self.dragging.take();
-        let ticked = self.ticking.take();
+        let pressed = self.pressing.take();
         unsafe { ReleaseCapture() };
-        if let Some(item) = ticked {
-            super::send(Event::CheckboxRelease {
-                inside: self.checkbox_at(x, y) == Some(item),
+        if let Some(item) = pressed {
+            super::send(Event::ControlRelease {
+                inside: self.control_at(x, y) == Some(item),
             });
         }
         if let Some(drag) = dragged {
@@ -233,8 +233,8 @@ impl BalloonView {
         if let Some(drag) = self.dragging.take() {
             super::dropped(drag);
         }
-        if self.ticking.take().is_some() {
-            super::send(Event::CheckboxRelease { inside: false });
+        if self.pressing.take().is_some() {
+            super::send(Event::ControlRelease { inside: false });
         }
     }
 
@@ -433,11 +433,11 @@ impl BalloonView {
         field.frame.contains(x, y).then_some(x - field.frame.x)
     }
 
-    fn checkbox_at(&self, x: i32, y: i32) -> Option<usize> {
-        self.checkboxes
+    fn control_at(&self, x: i32, y: i32) -> Option<usize> {
+        self.controls
             .borrow()
             .iter()
-            .position(|checkbox| checkbox.contains(x, y))
+            .position(|control| control.contains(x, y))
     }
 }
 

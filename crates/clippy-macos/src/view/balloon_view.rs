@@ -43,9 +43,9 @@ pub(crate) struct Ivars {
     surface: Surface,
     canvas: RefCell<Option<Canvas>>,
     field: Cell<Option<Field>>,
-    checkboxes: RefCell<Vec<Rect>>,
+    controls: RefCell<Vec<Rect>>,
     selecting: Cell<bool>,
-    ticking: Cell<Option<usize>>,
+    pressing: Cell<Option<usize>>,
     dragging: Cell<Option<Drag>>,
     marked: Cell<Option<Utf16Range>>,
 }
@@ -204,9 +204,9 @@ define_class!(
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
             let clicks = usize::try_from(event.clickCount()).unwrap_or(1);
-            if let Some(item) = self.on_checkbox(event) {
-                self.ivars().ticking.set(Some(item));
-                self.send(Event::CheckboxPress { item });
+            if let Some(item) = self.on_control(event) {
+                self.ivars().pressing.set(Some(item));
+                self.send(Event::ControlPress { item });
             } else if let Some(x) = self.field_x(event) {
                 self.discard_marked_text();
                 self.ivars().selecting.set(true);
@@ -232,9 +232,9 @@ define_class!(
                         (drag.origin.y + pointer.y - drag.pointer.y).round(),
                     ));
                 }
-            } else if let Some(item) = self.ivars().ticking.get() {
-                self.send(Event::CheckboxDrag {
-                    inside: self.on_checkbox(event) == Some(item),
+            } else if let Some(item) = self.ivars().pressing.get() {
+                self.send(Event::ControlDrag {
+                    inside: self.on_control(event) == Some(item),
                 });
             } else if self.ivars().selecting.get()
                 && let Some(field) = self.field()
@@ -250,9 +250,9 @@ define_class!(
         fn mouse_up(&self, event: &NSEvent) {
             self.ivars().selecting.set(false);
             self.ivars().dragging.set(None);
-            if let Some(item) = self.ivars().ticking.take() {
-                self.send(Event::CheckboxRelease {
-                    inside: self.on_checkbox(event) == Some(item),
+            if let Some(item) = self.ivars().pressing.take() {
+                self.send(Event::ControlRelease {
+                    inside: self.on_control(event) == Some(item),
                 });
             }
             self.follow_pointer();
@@ -318,9 +318,9 @@ impl BalloonView {
             surface: Surface::new(),
             canvas: RefCell::new(None),
             field: Cell::new(None),
-            checkboxes: RefCell::new(Vec::new()),
+            controls: RefCell::new(Vec::new()),
             selecting: Cell::new(false),
-            ticking: Cell::new(None),
+            pressing: Cell::new(None),
             dragging: Cell::new(None),
             marked: Cell::new(None),
         });
@@ -334,12 +334,12 @@ impl BalloonView {
         view
     }
 
-    pub(crate) fn present(&self, canvas: &Canvas, field: Option<Field>, checkboxes: &[Rect]) {
+    pub(crate) fn present(&self, canvas: &Canvas, field: Option<Field>, controls: &[Rect]) {
         if field.is_none() {
             self.ivars().marked.set(None);
         }
         self.ivars().field.set(field);
-        checkboxes.clone_into(&mut self.ivars().checkboxes.borrow_mut());
+        controls.clone_into(&mut self.ivars().controls.borrow_mut());
         self.ivars().surface.present(canvas, self.bounds());
         self.ivars().canvas.replace(Some(canvas.clone()));
     }
@@ -361,7 +361,7 @@ impl BalloonView {
 
     fn is_pressed(&self) -> bool {
         let ivars = self.ivars();
-        ivars.selecting.get() || ivars.ticking.get().is_some() || ivars.dragging.get().is_some()
+        ivars.selecting.get() || ivars.pressing.get().is_some() || ivars.dragging.get().is_some()
     }
 
     fn field(&self) -> Option<Field> {
@@ -378,13 +378,13 @@ impl BalloonView {
         self.window()?.parentWindow()
     }
 
-    fn on_checkbox(&self, event: &NSEvent) -> Option<usize> {
+    fn on_control(&self, event: &NSEvent) -> Option<usize> {
         let (x, y) = self.point(event);
         self.ivars()
-            .checkboxes
+            .controls
             .borrow()
             .iter()
-            .position(|checkbox| checkbox.contains(x, y))
+            .position(|control| control.contains(x, y))
     }
 
     #[expect(clippy::cast_possible_truncation)]

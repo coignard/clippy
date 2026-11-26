@@ -147,7 +147,7 @@ impl Stage {
         self.balloon
             .setFrame_display(unflip(scene.frame, primary), false);
         self.balloon_view
-            .present(&scene.canvas, scene.field, &scene.checkboxes);
+            .present(&scene.canvas, scene.field, &scene.controls);
         self.balloon_view.follow_pointer();
         if self.balloon.parentWindow().is_none() {
             unsafe {

@@ -177,7 +177,7 @@ impl Stage {
         self.balloon.present(
             &scene.canvas,
             scene.field,
-            &scene.checkboxes,
+            &scene.controls,
             (frame.x, frame.y),
             display.scale,
         );

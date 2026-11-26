@@ -43,6 +43,12 @@ pub fn printable(text: &str) -> Cow<'_, str> {
     FONT.printable(text)
 }
 
+pub(crate) fn shade(color: Color, percent: u16) -> Color {
+    let [red, green, blue, alpha] = color;
+    let darken = |channel: u8| u8::try_from(u16::from(channel) * percent / 100).unwrap_or(channel);
+    [darken(red), darken(green), darken(blue), alpha]
+}
+
 pub(crate) trait Bitmap {
     fn pixel(&self, x: i32, y: i32) -> Color;
 }

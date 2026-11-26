@@ -26,12 +26,13 @@ use crate::balloon::layout::{
 use crate::balloon::{Content, Placement, Prompt};
 use crate::character::Character;
 use crate::geometry::{Rect, Size};
-use crate::graphics::{BLACK, Canvas, Color, HIGHLIGHT, WHITE};
+use crate::graphics::{BLACK, Canvas, Color, HIGHLIGHT, WHITE, shade};
 
 const TIP_POINTING_DOWN: i32 = 0;
 const TIP_POINTING_UP: i32 = TIP.height;
 const CLIPPYS_HEAD: RangeInclusive<i32> = 41..=73;
 const TEXT_TOP: i32 = 1;
+const SEPARATOR_SHADE: u16 = 70;
 
 impl Layout<'_> {
     pub(crate) fn render(&self, placement: Placement) -> Canvas {
@@ -55,6 +56,10 @@ impl Layout<'_> {
             let left = row.x + CHECKBOX + LABEL_GAP;
             draw_lines(&mut canvas, caption, label, left, row.y);
         }
+        let buttons = self.content.buttons().into_iter();
+        for ((caption, pressed), area) in buttons.zip(self.buttons(placement)) {
+            controls::button(&mut canvas, area, caption, pressed);
+        }
         canvas
     }
 }
@@ -72,9 +77,7 @@ fn draw_lines(canvas: &mut Canvas, text: &str, lines: &[Range<usize>], left: i32
 }
 
 fn separator_color() -> Color {
-    let [red, green, blue, alpha] = CLIPPIT.balloon.fill;
-    let shade = |channel: u8| u8::try_from(u16::from(channel) * 7 / 10).unwrap_or(channel);
-    [shade(red), shade(green), shade(blue), alpha]
+    shade(CLIPPIT.balloon.fill, SEPARATOR_SHADE)
 }
 
 fn draw_tip(canvas: &mut Canvas, body: Rect, placement: Placement) {
@@ -264,6 +267,7 @@ mod tests {
             text,
             tasks,
             checkbox: Some((AGAIN, false)),
+            buttons: &[],
             press: Press::default(),
         })
     }
@@ -318,6 +322,7 @@ mod tests {
             text: "Errands:",
             tasks: &tasks,
             checkbox: None,
+            buttons: &[],
             press: Press::default(),
         });
         assert_eq!(without_box.separator(Placement::TopLeft), None);
@@ -328,6 +333,96 @@ mod tests {
         });
         assert_eq!(checklist.separator(Placement::TopLeft), None);
         assert_eq!(notice("", &[]).separator(Placement::TopLeft), None);
+    }
+
+    fn snoozes() -> Vec<String> {
+        ["15 min", "30 min", "1 hour"].map(str::to_owned).to_vec()
+    }
+
+    fn snoozable<'a>(
+        text: &'a str,
+        checkbox: Option<(&'a str, bool)>,
+        buttons: &'a [String],
+        press: Press,
+    ) -> Layout<'a> {
+        Layout::new(Content::Notice {
+            text,
+            tasks: &[],
+            checkbox,
+            buttons,
+            press,
+        })
+    }
+
+    #[test]
+    fn buttons_line_up_under_the_box_across_the_whole_balloon_like_in_office() {
+        let buttons = snoozes();
+        let placement = Placement::TopLeft;
+        let layout = snoozable("Stretch!", Some((AGAIN, false)), &buttons, Press::default());
+        let (left, _) = layout.text_origin(placement);
+        let checkbox = layout.checkboxes(placement)[0];
+        let row = layout.buttons(placement);
+        let edges: Vec<(i32, i32)> = row
+            .iter()
+            .map(|button| (button.x - left, button.right() - left))
+            .collect();
+        assert_eq!(edges, [(0, 60), (70, 130), (140, 200)]);
+        for button in &row {
+            assert_eq!((button.y, button.height), (checkbox.bottom() + 8, 22));
+        }
+        let line = layout.separator(placement).unwrap();
+        assert_eq!(line.right(), row[2].right());
+        assert_eq!(layout.body(placement).bottom() - row[0].bottom(), 9);
+        assert_eq!(
+            layout.controls(placement),
+            [checkbox, row[0], row[1], row[2]]
+        );
+    }
+
+    #[test]
+    fn buttons_widen_a_short_notice_to_fit_side_by_side() {
+        let buttons = snoozes();
+        let press = Press::default();
+        let plain = snoozable("Hi", None, &[], press).size();
+        let snoozable = snoozable("Hi", None, &buttons, press);
+        assert_eq!(plain.width, 120 + 18);
+        assert_eq!(snoozable.size().width, 200 + 18);
+        let (_, top) = snoozable.text_origin(Placement::TopLeft);
+        let row = snoozable.buttons(Placement::TopLeft);
+        assert_eq!(row[0].y, top + LINE_HEIGHT + 8);
+    }
+
+    #[test]
+    fn long_captions_widen_every_button_alike() {
+        let buttons = ["Tomorrow morning".to_owned(), "Later".to_owned()];
+        let layout = snoozable("Hi", None, &buttons, Press::default());
+        let row = layout.buttons(Placement::TopLeft);
+        let fitting = FONT.width("Tomorrow morning") + 2 * 11;
+        assert_eq!((row[0].width, row[1].width), (fitting, fitting));
+        assert_eq!(row[1].x - row[0].right(), 10);
+    }
+
+    #[test]
+    fn a_held_button_sinks_its_caption_and_nothing_else() {
+        let buttons = snoozes();
+        let placement = Placement::TopLeft;
+        let mut press = Press::default();
+        press.begin(2, 4);
+        let held = snoozable("Stretch!", Some((AGAIN, false)), &buttons, press);
+        let idle = snoozable("Stretch!", Some((AGAIN, false)), &buttons, Press::default());
+        assert_eq!(
+            held.content.buttons(),
+            [("15 min", false), ("30 min", true), ("1 hour", false)]
+        );
+        let (held, idle_canvas) = (held.render(placement), idle.render(placement));
+        let thirty = idle.buttons(placement)[1];
+        let size = held.size();
+        let changed: Vec<(i32, i32)> = (0..size.height)
+            .flat_map(|y| (0..size.width).map(move |x| (x, y)))
+            .filter(|&(x, y)| held.pixel(x, y) != idle_canvas.pixel(x, y))
+            .collect();
+        assert_ne!(changed, []);
+        assert!(changed.iter().all(|&(x, y)| thirty.inset(1).contains(x, y)));
     }
 
     #[test]

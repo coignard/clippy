@@ -30,7 +30,7 @@ pub struct BalloonScene {
     pub frame: Rect,
     pub canvas: Canvas,
     pub field: Option<Field>,
-    pub checkboxes: Vec<Rect>,
+    pub controls: Vec<Rect>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

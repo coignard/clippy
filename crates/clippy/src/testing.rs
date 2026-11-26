@@ -112,6 +112,22 @@ impl Harness {
         self.find(text).notice.checkbox
     }
 
+    pub fn buttons(&self, text: &str) -> Vec<String> {
+        self.find(text).notice.buttons
+    }
+
+    pub fn click(&mut self, text: &str, label: &str) {
+        let due = self.find(text);
+        let button = due
+            .notice
+            .buttons
+            .iter()
+            .position(|button| button == label)
+            .unwrap_or_else(|| panic!("the notice {text:?} should have a button {label:?}"));
+        self.plugins
+            .click(&due, button, &mut self.character, self.moment);
+    }
+
     pub fn shows_over_full_screen(&self, text: &str) -> bool {
         self.find(text).notice.over_full_screen
     }

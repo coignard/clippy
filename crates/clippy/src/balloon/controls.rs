@@ -15,10 +15,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::assets::{CLIPPIT, FONT};
+use crate::balloon::layout::{BASELINE, LINE_HEIGHT};
 use crate::geometry::Rect;
-use crate::graphics::{BLACK, Canvas, Color, WHITE};
+use crate::graphics::{BLACK, Canvas, Color, WHITE, shade};
 
 pub(super) const CHECKBOX: i32 = 13;
+pub(super) const BUTTON_WIDTH: i32 = 60;
+pub(super) const BUTTON_HEIGHT: i32 = 22;
+pub(super) const BUTTON_PADDING: i32 = 11;
+const BUTTON_BEVEL: i32 = 2;
+const BUTTON_EDGE_SHADE: u16 = 75;
+const BUTTON_PUSH: i32 = 1;
 const FACE: Color = [0xD4, 0xD0, 0xC8, 0xFF];
 const SHADOW: Color = [0x80, 0x80, 0x80, 0xFF];
 const DARK: Color = [0x40, 0x40, 0x40, 0xFF];
@@ -94,6 +102,42 @@ pub(super) fn checkbox(canvas: &mut Canvas, x: i32, y: i32, state: Checkbox) {
     }
 }
 
+pub(super) fn button(canvas: &mut Canvas, area: Rect, label: &str, pressed: bool) {
+    let edge = button_edge();
+    let (left, top, right, bottom) = (area.x, area.y, area.right() - 1, area.bottom() - 1);
+    let (straight_width, straight_height) = (
+        area.width - 2 * BUTTON_BEVEL,
+        area.height - 2 * BUTTON_BEVEL,
+    );
+    canvas.fill(Rect::new(left + BUTTON_BEVEL, top, straight_width, 1), edge);
+    canvas.fill(
+        Rect::new(left + BUTTON_BEVEL, bottom, straight_width, 1),
+        edge,
+    );
+    canvas.fill(
+        Rect::new(left, top + BUTTON_BEVEL, 1, straight_height),
+        edge,
+    );
+    canvas.fill(
+        Rect::new(right, top + BUTTON_BEVEL, 1, straight_height),
+        edge,
+    );
+    for step in 1..BUTTON_BEVEL {
+        for y in [top + step, bottom - step] {
+            canvas.plot(left + BUTTON_BEVEL - step, y, edge);
+            canvas.plot(right - BUTTON_BEVEL + step, y, edge);
+        }
+    }
+    let push = if pressed { BUTTON_PUSH } else { 0 };
+    let x = left + (area.width - FONT.width(label)) / 2 + push;
+    let baseline = top + (area.height - LINE_HEIGHT) / 2 + BASELINE + push;
+    FONT.draw(canvas, label, x, baseline, CLIPPIT.balloon.text);
+}
+
+fn button_edge() -> Color {
+    shade(CLIPPIT.balloon.fill, BUTTON_EDGE_SHADE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,6 +162,7 @@ mod tests {
                         DARK => 'k',
                         BLACK => '#',
                         TRANSPARENT => ' ',
+                        color if color == button_edge() => 'e',
                         _ => '?',
                     })
                     .collect()
@@ -160,6 +205,47 @@ mod tests {
         assert!(rows[2..19].iter().all(|row| row == "gkwwwwfw"));
         assert_eq!(rows[19], "gffffffw");
         assert_eq!(rows[20], "wwwwwwww");
+    }
+
+    #[test]
+    fn buttons_wear_the_bevelled_edge_of_office_balloons() {
+        let mut canvas = Canvas::new(Size::new(8, 6));
+        button(&mut canvas, Rect::new(0, 0, 8, 6), "", false);
+        assert_eq!(
+            rows(&canvas),
+            [
+                "  eeee  ", " e    e ", "e      e", "e      e", " e    e ", "  eeee  ",
+            ]
+        );
+        assert_eq!(button_edge(), [0xBF, 0xBF, 0xA8, 0xFF]);
+    }
+
+    fn ink(label: &str, pressed: bool) -> (i32, i32, i32, i32) {
+        let area = Rect::new(0, 0, BUTTON_WIDTH, BUTTON_HEIGHT);
+        let mut canvas = Canvas::new(Size::new(area.width, area.height));
+        button(&mut canvas, area, label, pressed);
+        let inked: Vec<(i32, i32)> = (0..area.height)
+            .flat_map(|y| (0..area.width).map(move |x| (x, y)))
+            .filter(|&(x, y)| canvas.pixel(x, y) == CLIPPIT.balloon.text)
+            .collect();
+        let xs = inked.iter().map(|&(x, _)| x);
+        let ys = inked.iter().map(|&(_, y)| y);
+        (
+            xs.clone().min().unwrap(),
+            ys.clone().min().unwrap(),
+            xs.max().unwrap(),
+            ys.max().unwrap(),
+        )
+    }
+
+    #[test]
+    fn labels_sit_in_the_middle_like_in_windows_and_sink_a_pixel_when_held() {
+        let (left, top, right, bottom) = ink("Cancel", false);
+        assert_eq!((left, top, right, bottom), (14, 6, 45, 14));
+        assert_eq!(
+            ink("Cancel", true),
+            (left + 1, top + 1, right + 1, bottom + 1)
+        );
     }
 
     #[test]

@@ -39,6 +39,7 @@ pub(crate) enum Content<'a> {
         text: &'a str,
         tasks: &'a [(String, bool)],
         checkbox: Option<(&'a str, bool)>,
+        buttons: &'a [String],
         press: Press,
     },
     Checklist {
@@ -83,6 +84,24 @@ impl<'a> Content<'a> {
             (label, Checkbox { checked, pressed })
         };
         (0..).zip(rows).map(boxed).collect()
+    }
+
+    pub(crate) fn buttons(self) -> Vec<(&'a str, bool)> {
+        let Content::Notice {
+            tasks,
+            checkbox,
+            buttons,
+            press,
+            ..
+        } = self
+        else {
+            return Vec::new();
+        };
+        let first = tasks.len() + usize::from(checkbox.is_some());
+        (first..)
+            .zip(buttons)
+            .map(|(item, label)| (label.as_str(), press.holds(item)))
+            .collect()
     }
 
     fn separated_from(self) -> Option<usize> {

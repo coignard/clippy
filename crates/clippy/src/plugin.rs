@@ -249,6 +249,7 @@ pub struct Notice<A> {
     on_snooze: A,
     on_toggle: Vec<A>,
     on_check: Option<A>,
+    on_click: Vec<A>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -257,6 +258,7 @@ pub(crate) struct Noticed {
     pub(crate) text: String,
     pub(crate) tasks: Vec<(String, bool)>,
     pub(crate) checkbox: Option<String>,
+    pub(crate) buttons: Vec<String>,
     pub(crate) over_full_screen: bool,
     pub(crate) shortcut: Option<Shortcut>,
     pub(crate) check_shortcut: Option<Shortcut>,
@@ -271,6 +273,7 @@ impl<A> Notice<A> {
             text: printable(text),
             tasks: Vec::new(),
             checkbox: None,
+            buttons: Vec::new(),
             over_full_screen: false,
             shortcut: None,
             check_shortcut: None,
@@ -282,6 +285,7 @@ impl<A> Notice<A> {
             on_snooze,
             on_toggle: Vec::new(),
             on_check: None,
+            on_click: Vec::new(),
         }
     }
 
@@ -294,6 +298,12 @@ impl<A> Notice<A> {
     pub fn checkbox(mut self, label: impl AsRef<str>, on_check: A) -> Self {
         self.view.checkbox = Some(printable(label));
         self.on_check = Some(on_check);
+        self
+    }
+
+    pub fn button(mut self, label: impl AsRef<str>, on_click: A) -> Self {
+        self.view.buttons.push(printable(label));
+        self.on_click.push(on_click);
         self
     }
 

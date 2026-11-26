@@ -535,12 +535,14 @@ impl Plugin for Digest {
 struct Errands {
     ticked: [bool; 2],
     done: bool,
+    put_off: bool,
 }
 
 enum ErrandAction {
     Later,
     Toggle(usize),
     Done,
+    PutOff,
 }
 
 impl Plugin for Errands {
@@ -551,12 +553,13 @@ impl Plugin for Errands {
     type Settings = NoSettings;
 
     fn notices(&self, _: &NoSettings, _: DateTime) -> Vec<Notice<ErrandAction>> {
-        (!self.done)
+        (!self.done && !self.put_off)
             .then(|| {
                 Notice::new("errands", "Errands:", ErrandAction::Later)
                     .task("Post the letter", self.ticked[0], ErrandAction::Toggle(0))
                     .task("Buy bread", self.ticked[1], ErrandAction::Toggle(1))
                     .checkbox(DONE, ErrandAction::Done)
+                    .button("Tomorrow", ErrandAction::PutOff)
             })
             .into_iter()
             .collect()
@@ -567,6 +570,7 @@ impl Plugin for Errands {
             ErrandAction::Later => {}
             ErrandAction::Toggle(task) => self.ticked[task] = !self.ticked[task],
             ErrandAction::Done => self.done = true,
+            ErrandAction::PutOff => self.put_off = true,
         }
     }
 }
@@ -1668,7 +1672,7 @@ fn reminders_tap_on_the_glass_right_on_time() {
     assert_eq!(notice(&app), Some((STRETCH, UNTICKED)));
     assert!(beckons(&app));
     let balloon = app.scene().balloon.unwrap();
-    assert!(!balloon.checkboxes.is_empty() && balloon.field.is_none());
+    assert!(!balloon.controls.is_empty() && balloon.field.is_none());
 }
 
 #[test]
@@ -1756,8 +1760,8 @@ fn ticking_a_box_that_does_not_celebrate_just_closes_the_notice() {
     app.place(CLIPPY, SCREEN);
     let (mut app, now) = start(app);
     let now = settle(&mut app, now, |app| app.notices.is_displayed());
-    app.handle(Event::CheckboxPress { item: 0 }, now);
-    app.handle(Event::CheckboxRelease { inside: true }, now);
+    app.handle(Event::ControlPress { item: 0 }, now);
+    app.handle(Event::ControlRelease { inside: true }, now);
     assert!(!celebrates(&app));
     assert!(!app.notices.is_displayed());
     assert_eq!(shown(&app).as_deref(), Some("Busy"));
@@ -1817,8 +1821,8 @@ fn a_notice_hands_the_keyboard_back_only_if_it_took_it() {
     app.handle(Event::Focus, now);
     app.handle(Event::Blur, now);
     let now = settle(&mut app, now, noticed);
-    app.handle(Event::CheckboxPress { item: 0 }, now);
-    app.handle(Event::CheckboxRelease { inside: true }, now);
+    app.handle(Event::ControlPress { item: 0 }, now);
+    app.handle(Event::ControlRelease { inside: true }, now);
     settle(&mut app, now, |app| !celebrates(app));
     assert!(field(&app).is_some_and(|field| !field.wants_focus));
 }
@@ -1872,8 +1876,8 @@ fn a_second_reminder_waits_for_the_first() {
     let later = day.at(10, 50);
     app.handle(Event::Tick, later);
     assert_eq!(notice(&app), Some((WATER, UNTICKED)));
-    app.handle(Event::CheckboxPress { item: 0 }, later);
-    app.handle(Event::CheckboxRelease { inside: true }, later);
+    app.handle(Event::ControlPress { item: 0 }, later);
+    app.handle(Event::ControlRelease { inside: true }, later);
     assert_eq!(notice(&app), Some((WATER, TICKED)));
     settle(&mut app, later, |app| {
         notice(app) == Some((STRETCH, UNTICKED))
@@ -1989,8 +1993,8 @@ fn errands(app: &App) -> Vec<(bool, bool)> {
 }
 
 fn click(app: &mut App, item: usize, now: Instant) {
-    app.handle(Event::CheckboxPress { item }, now);
-    app.handle(Event::CheckboxRelease { inside: true }, now);
+    app.handle(Event::ControlPress { item }, now);
+    app.handle(Event::ControlRelease { inside: true }, now);
 }
 
 #[test]
@@ -1999,12 +2003,12 @@ fn tasks_tick_off_one_by_one_and_the_last_one_ticks_the_box() {
     let (mut app, now) = with_errands(&directory);
     assert_eq!(called(&app), Some("Errands:"));
     assert_eq!(errands(&app), [(false, false); 3]);
-    app.handle(Event::CheckboxPress { item: 1 }, now);
+    app.handle(Event::ControlPress { item: 1 }, now);
     assert_eq!(
         errands(&app),
         [(false, false), (false, true), (false, false)]
     );
-    app.handle(Event::CheckboxRelease { inside: true }, now);
+    app.handle(Event::ControlRelease { inside: true }, now);
     assert_eq!(
         errands(&app),
         [(false, false), (true, false), (false, false)]
@@ -2033,14 +2037,47 @@ fn ticking_the_box_leaves_the_tasks_as_they_were() {
     assert!(celebrates(&app));
 }
 
+fn buttons(app: &App) -> Vec<(&str, bool)> {
+    app.balloon(None).map_or_default(Content::buttons)
+}
+
+#[test]
+fn a_button_comes_after_the_boxes_and_acts_once_let_go_over_it() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_errands(&directory);
+    assert_eq!(buttons(&app), [("Tomorrow", false)]);
+    assert_eq!(app.scene().balloon.unwrap().controls.len(), 4);
+    app.handle(Event::ControlPress { item: 3 }, now);
+    assert_eq!(buttons(&app), [("Tomorrow", true)]);
+    assert_eq!(errands(&app), [(false, false); 3]);
+    app.handle(Event::ControlRelease { inside: true }, now);
+    assert!(!celebrates(&app));
+    assert_eq!(called(&app), None);
+}
+
+#[test]
+fn letting_go_of_a_button_elsewhere_keeps_the_notice() {
+    let directory = TempDir::new().unwrap();
+    let (mut app, now) = with_errands(&directory);
+    app.handle(Event::ControlPress { item: 3 }, now);
+    app.handle(Event::ControlDrag { inside: false }, now);
+    assert_eq!(buttons(&app), [("Tomorrow", false)]);
+    app.handle(Event::ControlDrag { inside: true }, now);
+    assert_eq!(buttons(&app), [("Tomorrow", true)]);
+    app.handle(Event::ControlDrag { inside: false }, now);
+    app.handle(Event::ControlRelease { inside: false }, now);
+    assert_eq!(called(&app), Some("Errands:"));
+    assert_eq!(buttons(&app), [("Tomorrow", false)]);
+}
+
 #[test]
 fn letting_go_of_a_task_elsewhere_leaves_it_alone() {
     let directory = TempDir::new().unwrap();
     let (mut app, now) = with_errands(&directory);
-    app.handle(Event::CheckboxPress { item: 0 }, now);
-    app.handle(Event::CheckboxDrag { inside: false }, now);
+    app.handle(Event::ControlPress { item: 0 }, now);
+    app.handle(Event::ControlDrag { inside: false }, now);
     assert_eq!(errands(&app), [(false, false); 3]);
-    app.handle(Event::CheckboxRelease { inside: false }, now);
+    app.handle(Event::ControlRelease { inside: false }, now);
     assert_eq!(errands(&app), [(false, false); 3]);
 }
 
@@ -2050,9 +2087,9 @@ fn ticking_the_box_congratulates_and_retires_the_reminder() {
     let day = Day::starting_at(9, 59);
     let (mut app, now) = with_chores(&directory, &day);
     let now = settle(&mut app, now, noticed);
-    app.handle(Event::CheckboxPress { item: 0 }, now);
+    app.handle(Event::ControlPress { item: 0 }, now);
     assert_eq!(notice(&app), Some((STRETCH, PRESSED)));
-    app.handle(Event::CheckboxRelease { inside: true }, now);
+    app.handle(Event::ControlRelease { inside: true }, now);
     assert_eq!(notice(&app), Some((STRETCH, TICKED)));
     assert!(celebrates(&app));
     let now = settle(&mut app, now, quiet);
@@ -2070,8 +2107,8 @@ fn hidden_clippy_goes_back_into_hiding_right_after_the_congratulations() {
     app.handle(Event::Command(Command::Hide), now);
     let now = settle(&mut app, now, is_absent);
     let now = settle(&mut app, now, noticed);
-    app.handle(Event::CheckboxPress { item: 0 }, now);
-    app.handle(Event::CheckboxRelease { inside: true }, now);
+    app.handle(Event::ControlPress { item: 0 }, now);
+    app.handle(Event::ControlRelease { inside: true }, now);
     let done = settle(&mut app, now, quiet);
     let gone = settle(&mut app, done, is_absent);
     assert!(gone - done < QUICK);
@@ -2146,13 +2183,13 @@ fn dragging_off_the_box_takes_the_tick_back() {
     let day = Day::starting_at(9, 59);
     let (mut app, now) = with_chores(&directory, &day);
     let now = settle(&mut app, now, noticed);
-    app.handle(Event::CheckboxPress { item: 0 }, now);
-    app.handle(Event::CheckboxDrag { inside: false }, now);
+    app.handle(Event::ControlPress { item: 0 }, now);
+    app.handle(Event::ControlDrag { inside: false }, now);
     assert_eq!(notice(&app), Some((STRETCH, UNTICKED)));
-    app.handle(Event::CheckboxDrag { inside: true }, now);
+    app.handle(Event::ControlDrag { inside: true }, now);
     assert_eq!(notice(&app), Some((STRETCH, PRESSED)));
-    app.handle(Event::CheckboxDrag { inside: false }, now);
-    app.handle(Event::CheckboxRelease { inside: false }, now);
+    app.handle(Event::ControlDrag { inside: false }, now);
+    app.handle(Event::ControlRelease { inside: false }, now);
     assert_eq!(notice(&app), Some((STRETCH, UNTICKED)));
     assert!(!celebrates(&app));
 }
@@ -2163,8 +2200,8 @@ fn acting_during_the_congratulations_cuts_them_short() {
     let day = Day::starting_at(9, 59);
     let (mut app, now) = with_chores(&directory, &day);
     let now = settle(&mut app, now, noticed);
-    app.handle(Event::CheckboxPress { item: 0 }, now);
-    app.handle(Event::CheckboxRelease { inside: true }, now);
+    app.handle(Event::ControlPress { item: 0 }, now);
+    app.handle(Event::ControlRelease { inside: true }, now);
     app.handle(Event::Shortcut(WRITE), now);
     assert_eq!(notice(&app), None);
     assert_eq!(draft(&app), Some(""));
@@ -2284,14 +2321,14 @@ fn a_checklist_ticks_the_box_that_was_clicked() {
     let (mut app, now) = with_packing(&directory, Settings::default());
     app.handle(Event::Shortcut(PACK), now);
     let balloon = app.scene().balloon.unwrap();
-    assert_eq!(balloon.checkboxes.len(), 2);
-    assert!(balloon.checkboxes[0].bottom() < balloon.checkboxes[1].y);
-    app.handle(Event::CheckboxPress { item: 1 }, now);
+    assert_eq!(balloon.controls.len(), 2);
+    assert!(balloon.controls[0].bottom() < balloon.controls[1].y);
+    app.handle(Event::ControlPress { item: 1 }, now);
     assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", PRESSED)]);
-    app.handle(Event::CheckboxRelease { inside: true }, now);
+    app.handle(Event::ControlRelease { inside: true }, now);
     assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", TICKED)]);
-    app.handle(Event::CheckboxPress { item: 1 }, now);
-    app.handle(Event::CheckboxRelease { inside: true }, now);
+    app.handle(Event::ControlPress { item: 1 }, now);
+    app.handle(Event::ControlRelease { inside: true }, now);
     assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", UNTICKED)]);
 }
 
@@ -2335,10 +2372,10 @@ fn letting_go_of_a_checklist_box_elsewhere_leaves_it_alone() {
     let directory = TempDir::new().unwrap();
     let (mut app, now) = with_packing(&directory, Settings::default());
     app.handle(Event::Shortcut(PACK), now);
-    app.handle(Event::CheckboxPress { item: 0 }, now);
-    app.handle(Event::CheckboxDrag { inside: false }, now);
+    app.handle(Event::ControlPress { item: 0 }, now);
+    app.handle(Event::ControlDrag { inside: false }, now);
     assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", UNTICKED)]);
-    app.handle(Event::CheckboxRelease { inside: false }, now);
+    app.handle(Event::ControlRelease { inside: false }, now);
     assert_eq!(listed(&app), [("Socks", UNTICKED), ("Hat", UNTICKED)]);
 }
 
@@ -2523,12 +2560,12 @@ fn ticking_tasks_off_a_list_without_its_field_keeps_it_hidden_until_the_list_run
     let directory = TempDir::new().unwrap();
     let (mut app, now) = with_listed_todos(&directory, Settings::default());
     app.handle(Event::Shortcut(LIST), now);
-    app.handle(Event::CheckboxPress { item: 0 }, now);
-    app.handle(Event::CheckboxRelease { inside: true }, now);
+    app.handle(Event::ControlPress { item: 0 }, now);
+    app.handle(Event::ControlRelease { inside: true }, now);
     assert_eq!(todos(&app), Some(vec!["Call the bank"]));
     assert_eq!(field(&app), None);
-    app.handle(Event::CheckboxPress { item: 0 }, now);
-    app.handle(Event::CheckboxRelease { inside: true }, now);
+    app.handle(Event::ControlPress { item: 0 }, now);
+    app.handle(Event::ControlRelease { inside: true }, now);
     assert_eq!(app.plugins.prompt().map(Prompt::question), None);
 }
 
@@ -2607,8 +2644,8 @@ fn ticking_a_task_off_a_list_leaves_the_keyboard_alone() {
     app.handle(Event::Focus, now);
     app.handle(Event::Blur, now);
     assert!(!field(&app).unwrap().wants_focus);
-    app.handle(Event::CheckboxPress { item: 0 }, now);
-    app.handle(Event::CheckboxRelease { inside: true }, now);
+    app.handle(Event::ControlPress { item: 0 }, now);
+    app.handle(Event::ControlRelease { inside: true }, now);
     assert_eq!(todos(&app), Some(vec!["Call the bank"]));
     assert!(!field(&app).unwrap().wants_focus);
 }

@@ -18,7 +18,7 @@
 use std::mem;
 
 use crate::balloon::{Content, Press};
-use crate::plugin::{Due, Urgency};
+use crate::plugin::{Due, Noticed, Urgency};
 use crate::shortcut::Shortcut;
 
 #[derive(Default)]
@@ -33,6 +33,7 @@ pub(super) struct Board {
 pub(super) enum Released {
     Checked(Due),
     Toggled(Due, usize),
+    Clicked(Due, usize),
 }
 
 impl Board {
@@ -65,10 +66,11 @@ impl Board {
     }
 
     pub(super) fn press(&mut self, item: usize) {
-        let rows = self.shown.as_ref().map_or(0, |due| {
-            due.notice.tasks.len() + usize::from(due.notice.checkbox.is_some())
-        });
-        self.press.begin(item, rows);
+        let controls = self
+            .shown
+            .as_ref()
+            .map_or(0, |due| boxes(&due.notice) + due.notice.buttons.len());
+        self.press.begin(item, controls);
     }
 
     pub(super) fn drag(&mut self, inside: bool) {
@@ -78,6 +80,9 @@ impl Board {
     pub(super) fn release(&mut self, inside: bool) -> Option<Released> {
         let item = self.press.release(inside)?;
         let due = self.shown.clone()?;
+        if let Some(button) = item.checked_sub(boxes(&due.notice)) {
+            return Some(Released::Clicked(due, button));
+        }
         let tasks = &due.notice.tasks;
         let completes = tasks.get(item).is_some_and(|(_, done)| !done)
             && (0..tasks.len()).all(|other| other == item || tasks[other].1);
@@ -156,7 +161,12 @@ impl Board {
             text: &due.notice.text,
             tasks: &due.notice.tasks,
             checkbox: checkbox.map(|label| (label, checked)),
+            buttons: &due.notice.buttons,
             press: self.press,
         })
     }
+}
+
+fn boxes(notice: &Noticed) -> usize {
+    notice.tasks.len() + usize::from(notice.checkbox.is_some())
 }

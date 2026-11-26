@@ -381,6 +381,17 @@ impl Plugins {
         self.act(due.plugin, toggled, character, moment);
     }
 
+    pub(crate) fn click(
+        &mut self,
+        due: &Due,
+        button: usize,
+        character: &mut Character,
+        moment: Moment,
+    ) {
+        let clicked = Trigger::Click(&due.notice.id, button);
+        self.act(due.plugin, clicked, character, moment);
+    }
+
     pub(crate) fn dismiss(&mut self) {
         if let Some(Asking { plugin, .. }) = self.asking.take() {
             self.installed[plugin].dismiss();
