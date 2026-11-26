@@ -17,6 +17,7 @@
 
 use std::collections::BTreeSet;
 
+use jiff::SignedDuration;
 use jiff::civil::{Date, DateTime};
 use serde::{Deserialize, Serialize};
 
@@ -42,6 +43,12 @@ pub(crate) struct Snooze {
     pub(crate) times: u32,
     pub(crate) occurrence: DateTime,
     pub(crate) until: DateTime,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "jiff::fmt::serde::duration::friendly::compact::optional"
+    )]
+    picked: Option<SignedDuration>,
 }
 
 impl Progress {
@@ -54,6 +61,12 @@ impl Progress {
         self.snoozed
             .filter(|snooze| snooze.occurrence == occurrence)
             .map_or(0, |snooze| snooze.times)
+    }
+
+    pub(crate) fn picked_for(&self, occurrence: DateTime) -> Option<SignedDuration> {
+        self.snoozed
+            .filter(|snooze| snooze.occurrence == occurrence)?
+            .picked
     }
 
     pub(crate) fn is_from(&self, day: Date) -> bool {
@@ -83,11 +96,17 @@ impl Progress {
         self.ticked = (!tasks.is_empty()).then_some(Ticked { occurrence, tasks });
     }
 
-    pub(crate) fn snooze(&mut self, occurrence: DateTime, until: DateTime) {
+    pub(crate) fn snooze(
+        &mut self,
+        occurrence: DateTime,
+        until: DateTime,
+        picked: Option<SignedDuration>,
+    ) {
         self.snoozed = Some(Snooze {
             times: self.snoozes_of(occurrence) + 1,
             occurrence,
             until,
+            picked,
         });
     }
 
@@ -108,7 +127,11 @@ mod tests {
     fn progress_belongs_to_the_day_it_was_made() {
         let day = date(2026, 10, 19);
         let mut progress = Progress::default();
-        progress.snooze(day.at(23, 0, 0, 0), day.tomorrow().unwrap().at(0, 50, 0, 0));
+        progress.snooze(
+            day.at(23, 0, 0, 0),
+            day.tomorrow().unwrap().at(0, 50, 0, 0),
+            None,
+        );
         assert!(progress.is_from(day));
         assert!(!progress.is_from(day.tomorrow().unwrap()));
         assert_eq!(progress.snooze_on(day.tomorrow().unwrap()), None);

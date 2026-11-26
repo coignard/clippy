@@ -138,6 +138,70 @@ fn a_new_day_starts_the_snoozes_afresh() {
 }
 
 #[test]
+fn buttons_put_a_reminder_off_for_as_long_as_they_say() {
+    let mut harness = reminders(habits(), at(10, 0));
+    assert_eq!(harness.buttons(STRETCH), ["15 min", "30 min", "1 hour"]);
+    for (button, back) in [
+        ("15 min", at(10, 15)),
+        ("30 min", at(10, 45)),
+        ("1 hour", at(11, 45)),
+    ] {
+        harness.click(STRETCH, button);
+        assert_eq!(harness.notices(), NOTHING);
+        assert_eq!(harness.next_change(), Some(back));
+        harness.set_time(back);
+    }
+}
+
+#[test]
+fn after_a_button_snoozing_repeats_its_choice_instead_of_climbing_the_ladder() {
+    let mut harness = reminders(habits(), at(10, 0));
+    let steps = [
+        (at(10, 0), None, at(10, 15)),
+        (at(10, 15), Some("1 hour"), at(11, 15)),
+        (at(11, 15), None, at(12, 15)),
+        (at(12, 15), Some("15 min"), at(12, 30)),
+        (at(12, 30), None, at(12, 45)),
+    ];
+    for (now, button, back) in steps {
+        harness.set_time(now);
+        match button {
+            Some(button) => harness.click(STRETCH, button),
+            None => harness.snooze(STRETCH),
+        }
+        assert_eq!(harness.next_change(), Some(back), "{now}");
+    }
+}
+
+#[test]
+fn the_next_occurrence_forgets_the_button_and_climbs_the_ladder_afresh() {
+    let mut harness = reminders(hourly(), at(9, 0));
+    harness.click(WATER, "30 min");
+    assert_eq!(harness.next_change(), Some(at(9, 30)));
+    harness.set_time(at(10, 0));
+    harness.snooze(WATER);
+    assert_eq!(harness.next_change(), Some(at(10, 15)));
+}
+
+#[test]
+fn the_picked_button_outlives_restarts() {
+    let mut progress = Reminders::default();
+    progress.begin_day(&habits(), at(10, 0));
+    progress
+        .progress
+        .entry(STRETCH.to_owned())
+        .or_default()
+        .snooze(at(10, 0), at(11, 0), Some(SignedDuration::from_hours(1)));
+    let saved = serde_json::to_value(&progress).unwrap();
+    assert_eq!(saved["progress"][STRETCH]["snoozed"]["picked"], "1h");
+    let restored: Reminders = serde_json::from_value(saved).unwrap();
+    let mut harness = Harness::with_settings(restored, habits());
+    harness.set_time(at(11, 0));
+    harness.snooze(STRETCH);
+    assert_eq!(harness.next_change(), Some(at(12, 0)));
+}
+
+#[test]
 fn missed_reminders_wait_for_the_app_earliest_first() {
     let settings = settings(&format!(
         r#"reminders = [
@@ -382,7 +446,7 @@ fn a_new_day_clears_what_yesterday_left_behind() {
         .progress
         .entry(STRETCH.to_owned())
         .or_default()
-        .snooze(at(10, 0), at(10, 15));
+        .snooze(at(10, 0), at(10, 15), None);
     reminders.begin_day(&habits(), next_day(9, 0));
     assert_eq!(reminders.paused_until, None);
     assert!(reminders.progress.is_empty());
@@ -414,7 +478,7 @@ fn progress_outlives_restarts_as_readable_json() {
         .progress
         .entry(WATER.to_owned())
         .or_default()
-        .snooze(at(10, 0), at(10, 15));
+        .snooze(at(10, 0), at(10, 15), None);
     let saved = serde_json::to_value(&progress).unwrap();
     assert_eq!(
         saved,

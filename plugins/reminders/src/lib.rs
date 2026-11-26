@@ -28,8 +28,8 @@ use std::collections::BTreeMap;
 
 use clippy::hours::{TimeOfDay, midnight_after};
 use clippy::{Context, MenuItem, Notice, Plugin};
-use jiff::ToSpan;
 use jiff::civil::{Date, DateTime};
+use jiff::{SignedDuration, ToSpan};
 use serde::{Deserialize, Serialize};
 
 pub use settings::Settings;
@@ -38,6 +38,12 @@ use agenda::Agenda;
 use progress::Progress;
 use schedule::Comeback;
 use settings::Reminder;
+
+const SNOOZE_BUTTONS: [(&str, SignedDuration); 3] = [
+    ("15 min", SignedDuration::from_mins(15)),
+    ("30 min", SignedDuration::from_mins(30)),
+    ("1 hour", SignedDuration::from_hours(1)),
+];
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -56,6 +62,7 @@ pub enum Action {
         key: String,
         occurrence: DateTime,
         until: DateTime,
+        picked: Option<SignedDuration>,
     },
     Done {
         key: String,
@@ -108,14 +115,19 @@ impl Reminders {
             None => "Don't show me this reminder again".to_owned(),
         };
         let key = habit.key.clone();
-        let mut notice = Notice::new(
-            habit.key.as_str(),
-            habit.text,
+        let snooze = |picked: Option<SignedDuration>| {
+            let wait = picked.unwrap_or_else(|| settings.snooze.after(snoozes));
             Action::Snooze {
                 key: key.clone(),
                 occurrence,
-                until: now.saturating_add(settings.snooze.after(snoozes)),
-            },
+                until: now.saturating_add(wait),
+                picked,
+            }
+        };
+        let mut notice = Notice::new(
+            habit.key.as_str(),
+            habit.text,
+            snooze(progress.picked_for(occurrence)),
         );
         let ticked = |task: &str| progress.has_ticked(occurrence, task);
         for task in habit.tasks {
@@ -132,6 +144,9 @@ impl Reminders {
                 completes,
             };
             notice = notice.task(task.as_str(), done, toggle);
+        }
+        for (caption, interval) in SNOOZE_BUTTONS {
+            notice = notice.button(caption, snooze(Some(interval)));
         }
         notice
             .checkbox(label, Action::Done { key, occurrence })
@@ -242,11 +257,12 @@ impl Plugin for Reminders {
                 key,
                 occurrence,
                 until,
+                picked,
             } => {
                 self.progress
                     .entry(key)
                     .or_default()
-                    .snooze(occurrence, until);
+                    .snooze(occurrence, until, picked);
             }
             Action::Done { key, occurrence } => {
                 self.progress.entry(key).or_default().finish(occurrence);
